@@ -165,3 +165,23 @@ cluster locale, quindi funziona in ogni caso.
 `0x5008` (cyclic timer), `0x500D` / `0x500E` (start/end time), `0x500F` (volume
 giornaliero), `0x5010` (work state). `0x500D`/`0x500E` sono i più interessanti:
 darebbero orari assoluti affidabili, che `0x501F` non offre.
+
+## 11. Default di fabbrica in galloni US — corretto nel quirk, da riverificare sul campo
+
+Il payload `0x501D` di fabbrica letto dal dispositivo il 2026-08-09 (fw
+`0x00001007`) è `[0,0,5,0,0,0,0,0,0,1,0,1]`: **byte 7 = 0, cioè gallone US**,
+mentre l'entità del volume è esposta in litri. Il merge con la cache
+conservava l'unità di fabbrica: scrivendo solo il volume, la UI diceva litri e
+il dispositivo erogava galloni. Corretto: il quirk ora forza byte 7 = litro
+quando si scrive `capacity_amount` senza un'unità esplicita (vedi
+[TESTS.md](TESTS.md), «Capacity unit gotcha»).
+
+Conseguenze da verificare:
+
+- i test di auto-chiusura in modalità capacity del punto #1 (target «1 L»,
+  chiusure in 8–16 s) sono stati con ogni probabilità eseguiti **in galloni**:
+  l'unità in cache era ancora quella di fabbrica. 1 gal ≈ 3,79 L, coerente con
+  le durate osservate più lunghe del previsto per 1 L.
+- **riverificare sul dispositivo l'accuratezza del volume erogato in litri**
+  dopo la correzione: target noto (es. 5 L), confronto con `0x5007` e con il
+  volume reale raccolto.

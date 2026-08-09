@@ -1,0 +1,88 @@
+# Field metadata for the irrigation services. Names/descriptions live in
+# strings.json + translations/, keyed by the same service and field names;
+# this file only carries the selectors the frontend renders.
+irrigation_by_liters:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          filter:
+            - manufacturer: SONOFF
+              model: SWV-ZF2
+            - manufacturer: SONOFF
+              model: SWV-ZF2U
+            - manufacturer: SONOFF
+              model: SWV-ZF2E
+    channel:
+      required: true
+      example: "1"
+      selector:
+        select:
+          # mode: list renders the two options as radio buttons instead of a
+          # dropdown; labels come from the "channel" selector translation.
+          options:
+            - "1"
+            - "2"
+          mode: list
+          translation_key: channel
+    liters:
+      required: true
+      example: 10
+      selector:
+        number:
+          min: 1
+          max: 10000
+          unit_of_measurement: L
+          mode: box
+    fail_safe_minutes:
+      required: false
+      example: 30
+      selector:
+        number:
+          min: 0
+          max: 719
+          unit_of_measurement: min
+          mode: box
+
+irrigation_by_minutes:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          filter:
+            - manufacturer: SONOFF
+              model: SWV-ZF2
+            - manufacturer: SONOFF
+              model: SWV-ZF2U
+            - manufacturer: SONOFF
+              model: SWV-ZF2E
+    channel:
+      required: true
+      example: "1"
+      selector:
+        select:
+          options:
+            - "1"
+            - "2"
+          mode: list
+          translation_key: channel
+    minutes:
+      required: true
+      example: 15
+      selector:
+        number:
+          min: 1
+          max: 719
+          unit_of_measurement: min
+          mode: box
+    fail_safe_minutes:
+      required: false
+      example: 30
+      selector:
+        number:
+          min: 0
+          max: 719
+          unit_of_measurement: min
+          mode: box

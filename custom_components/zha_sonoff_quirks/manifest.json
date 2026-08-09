@@ -1,10 +1,10 @@
 {
   "domain": "zha_sonoff_quirks",
   "name": "ZHA Sonoff Quirks",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "documentation": "https://github.com/SimoneAvogadro/zha-sonoff-quirks",
   "issue_tracker": "https://github.com/SimoneAvogadro/zha-sonoff-quirks/issues",
-  "dependencies": ["zha"],
+  "dependencies": ["zha", "frontend", "http", "lovelace"],
   "codeowners": ["@SimoneAvogadro"],
   "iot_class": "local_push",
   "config_flow": true

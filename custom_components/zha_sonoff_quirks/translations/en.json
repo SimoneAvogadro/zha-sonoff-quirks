@@ -9,5 +9,59 @@
     "abort": {
       "already_configured": "ZHA Sonoff Quirks is already set up."
     }
+  },
+  "selector": {
+    "channel": {
+      "options": {
+        "1": "Channel 1",
+        "2": "Channel 2"
+      }
+    }
+  },
+  "services": {
+    "irrigation_by_liters": {
+      "name": "Irrigation by liters",
+      "description": "Configures the SONOFF SWV-ZF2 valve for a volume-limited run and opens the selected channel. The valve closes the channel by itself once the volume has been delivered.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The SONOFF SWV-ZF2 valve to irrigate with."
+        },
+        "channel": {
+          "name": "Channel",
+          "description": "Which of the two valve channels to open."
+        },
+        "liters": {
+          "name": "Liters",
+          "description": "Target volume to deliver, in liters."
+        },
+        "fail_safe_minutes": {
+          "name": "Fail-safe timeout",
+          "description": "Maximum time the channel may stay open, in minutes (0 disables the fail-safe). If not set, the valve keeps its current fail-safe setting."
+        }
+      }
+    },
+    "irrigation_by_minutes": {
+      "name": "Irrigation by minutes",
+      "description": "Configures the SONOFF SWV-ZF2 valve for a time-limited run and opens the selected channel. The valve closes the channel by itself when the time is up.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The SONOFF SWV-ZF2 valve to irrigate with."
+        },
+        "channel": {
+          "name": "Channel",
+          "description": "Which of the two valve channels to open."
+        },
+        "minutes": {
+          "name": "Minutes",
+          "description": "How long to irrigate, in minutes."
+        },
+        "fail_safe_minutes": {
+          "name": "Fail-safe timeout",
+          "description": "Maximum time the channel may stay open, in minutes (0 disables the fail-safe). If not set, the valve keeps its current fail-safe setting."
+        }
+      }
+    }
   }
 }

@@ -57,6 +57,12 @@ STATUS_CAPACITY_PREAMBLE_WIRE = [
     0, 0, 1, 1, 50, 11, 194, 32, 50, 11, 194, 92, 0, 0, 1,
 ]
 
+# Payload 0x501D di fabbrica letto dal dispositivo il 2026-08-09 (fw
+# 0x00001007): mode=duration, durata 5 min, capacity_unit = us_gallon
+# (byte 7 = 0!), volume 1, fail-safe 1 min. E' il caso reale che ha rivelato
+# il bug dell'unita': la UI espone litri ma il default e' in galloni.
+FACTORY_DEFAULT_WIRE = [0, 0, 5, 0, 0, 0, 0, 0, 0, 1, 0, 1]
+
 
 # --------------------------------------------------------------------------- #
 # Signature / registrazione
@@ -771,3 +777,98 @@ def test_live_counters_reach_zha(swv_cluster):
 
     assert swv_cluster.get("valve_open_duration") == 5
     assert swv_cluster.get("irrigation_volume") == 34
+
+
+# --------------------------------------------------------------------------- #
+# Unita' capacita': il default di fabbrica e' il gallone US
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_write_capacity_amount_forces_liter_unit(
+    swv_cluster, manual_config_cluster
+):
+    """Scrivere solo il volume forza byte 7 a litri, non ai galloni in cache.
+
+    Cache innescata con il payload di fabbrica reale (byte 7 = 0, gallone US):
+    l'entita' number del volume e' dichiarata in litri, quindi il merge non
+    deve conservare l'unita' di fabbrica — altrimenti la UI dice litri e il
+    dispositivo eroga galloni.
+    """
+    manual_config_cluster.update_from_manual_default_settings(FACTORY_DEFAULT_WIRE)
+
+    with mock.patch.object(
+        swv_cluster, "write_attributes", new=mock.AsyncMock(return_value=[[]])
+    ) as write:
+        await manual_config_cluster.write_attributes({"capacity_amount": 500})
+
+    written = write.await_args[0][0][
+        SWVZF2Cluster.AttributeDefs.manual_default_settings.id
+    ]
+    wire = list(written)
+
+    assert wire[7] == int(IrrigationAmountUnit.liter) == 1
+    assert (wire[8] << 8) | wire[9] == 500
+    # gli altri campi restano quelli di fabbrica
+    assert decode_manual_default_settings(wire)["fail_safe"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "attributes",
+    [
+        {"irrigation_mode": IrrigationMode.capacity},
+        {"fail_safe": 60},
+    ],
+)
+async def test_write_without_capacity_amount_keeps_gallon_unit(
+    swv_cluster, manual_config_cluster, attributes
+):
+    """Scrivere campi diversi dal volume non tocca l'unita' in cache.
+
+    La forzatura a litri riguarda solo le scritture di capacity_amount: chi
+    cambia modalita' o fail-safe non deve alterare il byte 7 riletto dal
+    dispositivo (qui il gallone US di fabbrica).
+    """
+    manual_config_cluster.update_from_manual_default_settings(FACTORY_DEFAULT_WIRE)
+
+    with mock.patch.object(
+        swv_cluster, "write_attributes", new=mock.AsyncMock(return_value=[[]])
+    ) as write:
+        await manual_config_cluster.write_attributes(attributes)
+
+    written = write.await_args[0][0][
+        SWVZF2Cluster.AttributeDefs.manual_default_settings.id
+    ]
+
+    assert list(written)[7] == int(IrrigationAmountUnit.us_gallon) == 0
+
+
+@pytest.mark.asyncio
+async def test_explicit_capacity_unit_write_is_respected(
+    swv_cluster, manual_config_cluster
+):
+    """Un'unita' scritta esplicitamente insieme al volume non viene forzata.
+
+    Chi vuole davvero i galloni US puo' scriverli: la forzatura a litri scatta
+    solo quando capacity_amount arriva senza capacity_unit.
+    """
+    manual_config_cluster.update_from_manual_default_settings(FACTORY_DEFAULT_WIRE)
+
+    with mock.patch.object(
+        swv_cluster, "write_attributes", new=mock.AsyncMock(return_value=[[]])
+    ) as write:
+        await manual_config_cluster.write_attributes(
+            {
+                "capacity_amount": 500,
+                "capacity_unit": IrrigationAmountUnit.us_gallon,
+            }
+        )
+
+    written = write.await_args[0][0][
+        SWVZF2Cluster.AttributeDefs.manual_default_settings.id
+    ]
+    wire = list(written)
+
+    assert wire[7] == int(IrrigationAmountUnit.us_gallon) == 0
+    assert (wire[8] << 8) | wire[9] == 500

@@ -92,6 +92,49 @@ logger:
     zhaquirks: debug
 ```
 
+## Services (for automations)
+
+The integration bundles the "configure, then open" sequence into two
+device-centric services, so automations don't need to know the entity layout:
+
+```yaml
+action: zha_sonoff_quirks.irrigation_by_liters
+data:
+  device_id: abc123...        # device picker (SONOFF SWV-ZF2 only)
+  channel: "2"                # radio buttons: Channel 1 / Channel 2
+  liters: 250
+  fail_safe_minutes: 60       # optional; leaves the current value if omitted
+
+action: zha_sonoff_quirks.irrigation_by_minutes
+data:
+  device_id: abc123...
+  channel: "1"
+  minutes: 15
+```
+
+Minutes rather than seconds by design: `0x501D` has 1-minute granularity
+(0–719). The service writes mode + target (+ fail-safe when given) and turns
+the chosen channel's switch on — the valve closes by itself on-device, so there
+is nothing to stop server-side. Stopping early is a plain `switch.turn_off` on
+the channel switch. Entities are resolved from the registry by `unique_id`, so
+renaming entities does not break the services. Starting a channel that is
+already irrigating raises an error instead of silently retargeting the run.
+
+## Lovelace card
+
+The integration ships and auto-registers `sonoff-valve-card` — same look and
+feel as the Tuya irrigation card, adapted to this valve's model: one shared
+configuration block (liters or minutes) and **two green start buttons, one per
+line**. The running line's button turns into a red stop. Progress comes from
+the `0x501F` session feed (device truth: survives a browser refresh and shows
+automation-started runs too).
+
+Add it from the dashboard card picker (*Sonoff Valve (Irrigation)*): pick the
+device in the visual editor and it resolves all entities by `unique_id`,
+storing them in the card config. Optional fields rename the card and the two
+lines. If the card does not appear in the picker, hard-refresh the browser
+after the first restart.
+
 ## Usage: autonomous irrigation
 
 The model is **configure → turn on**:
@@ -149,11 +192,14 @@ Layout:
 
 ```
 custom_components/zha_sonoff_quirks/
-  __init__.py        # imports quirks/ at startup -> registration in the registry
+  __init__.py        # imports quirks/ at startup; serves the card; services
   config_flow.py     # one-click flow, no options
+  services.py        # irrigation_by_liters / irrigation_by_minutes
   quirks/
     sonoff_swv_zf2.py  # THE quirk (single copy; integrity in checksums.sha256)
-tests/               # 57 offline tests, no device required
+  www/
+    sonoff-valve-card.js  # Lovelace card (auto-registered as a resource)
+tests/               # 61 offline tests, no device required
 ```
 
 The quirk is deliberately **self-contained**: it imports nothing from the

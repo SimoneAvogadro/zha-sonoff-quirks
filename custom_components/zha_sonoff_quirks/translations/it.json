@@ -9,5 +9,59 @@
     "abort": {
       "already_configured": "ZHA Sonoff Quirks è già configurato."
     }
+  },
+  "selector": {
+    "channel": {
+      "options": {
+        "1": "Linea 1",
+        "2": "Linea 2"
+      }
+    }
+  },
+  "services": {
+    "irrigation_by_liters": {
+      "name": "Irrigazione a litri",
+      "description": "Configura l'elettrovalvola SONOFF SWV-ZF2 per un'erogazione a volume e apre la linea selezionata. La valvola chiude la linea da sola una volta erogato il volume richiesto.",
+      "fields": {
+        "device_id": {
+          "name": "Dispositivo",
+          "description": "L'elettrovalvola SONOFF SWV-ZF2 con cui irrigare."
+        },
+        "channel": {
+          "name": "Linea",
+          "description": "Quale delle due linee della valvola aprire."
+        },
+        "liters": {
+          "name": "Litri",
+          "description": "Volume da erogare, in litri."
+        },
+        "fail_safe_minutes": {
+          "name": "Timeout di sicurezza",
+          "description": "Tempo massimo di apertura della linea, in minuti (0 disattiva la sicurezza). Se non impostato, la valvola mantiene il valore di sicurezza attuale."
+        }
+      }
+    },
+    "irrigation_by_minutes": {
+      "name": "Irrigazione a minuti",
+      "description": "Configura l'elettrovalvola SONOFF SWV-ZF2 per un'erogazione a tempo e apre la linea selezionata. La valvola chiude la linea da sola allo scadere del tempo.",
+      "fields": {
+        "device_id": {
+          "name": "Dispositivo",
+          "description": "L'elettrovalvola SONOFF SWV-ZF2 con cui irrigare."
+        },
+        "channel": {
+          "name": "Linea",
+          "description": "Quale delle due linee della valvola aprire."
+        },
+        "minutes": {
+          "name": "Minuti",
+          "description": "Durata dell'irrigazione, in minuti."
+        },
+        "fail_safe_minutes": {
+          "name": "Timeout di sicurezza",
+          "description": "Tempo massimo di apertura della linea, in minuti (0 disattiva la sicurezza). Se non impostato, la valvola mantiene il valore di sicurezza attuale."
+        }
+      }
+    }
   }
 }

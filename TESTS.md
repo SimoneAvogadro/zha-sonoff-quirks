@@ -110,6 +110,16 @@ Two more practical notes:
   this firmware that did not occur, but the workaround is cheap: rewrite the
   element type byte before deserializing.
 
+#### Capacity unit gotcha
+
+The device ships configured in **US gallons**: the factory `0x501D` read on
+firmware `0x00001007` was `[0, 0, 5, 0, 0, 0, 0, 0, 0, 1, 0, 1]` — byte 7
+= `0`, i.e. US gallon. Any integration that exposes the capacity amount in
+litres (as this quirk and Zigbee2MQTT do) but merges writes into the cached
+settings will silently keep the gallon unit: the UI says litres, the valve
+delivers gallons. **Force byte 7 = `1` (litre) whenever you write a capacity
+amount** unless the user explicitly wrote a unit too. Quirk >= 0.4.0 does this.
+
 ### `0x501F` — irrigation status (live progress) ⭐
 
 The interesting one. **Reported spontaneously every ~6 seconds while the valve

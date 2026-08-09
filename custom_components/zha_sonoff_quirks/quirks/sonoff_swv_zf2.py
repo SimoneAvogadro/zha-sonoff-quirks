@@ -592,14 +592,30 @@ class SWVZF2ManualConfigCluster(LocalDataCluster):
                     "settings cannot be written"
                 ) from exc
 
+        written_names: set[str] = set()
         for attr, value in attributes.items():
             attr_name = self.find_attribute(attr).name
+            written_names.add(attr_name)
             if attr_name == "irrigation_mode":
                 settings[attr_name] = IrrigationMode(int(value))
             elif attr_name == "capacity_unit":
                 settings[attr_name] = IrrigationAmountUnit(int(value))
             else:
                 settings[attr_name] = int(value)
+
+        # L'entita' number del volume e' dichiarata in LITRI, ma il dispositivo
+        # esce di fabbrica con capacity_unit = us_gallon: il payload 0x501D
+        # reale letto il 2026-08-09 (fw 0x00001007) e'
+        # [0,0,5,0,0,0,0,0,0,1,0,1], con byte 7 = 0 (gallone US). Il merge con
+        # la cache conserverebbe quindi il gallone quando l'utente scrive solo
+        # il volume: la UI direbbe litri e il dispositivo erogherebbe galloni.
+        # Se il volume viene scritto senza un'unita' esplicita, si forza il
+        # litro; chi scrive capacity_unit di proposito resta rispettato.
+        if (
+            self.AttributeDefs.capacity_amount.name in written_names
+            and self.AttributeDefs.capacity_unit.name not in written_names
+        ):
+            settings["capacity_unit"] = IrrigationAmountUnit.liter
 
         payload = pack_manual_default_settings(
             irrigation_mode=settings["irrigation_mode"],
