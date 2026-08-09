@@ -1,0 +1,43 @@
+[project]
+name = "zha-sonoff-quirks"
+version = "0.1.0"
+description = "Custom ZHA quirk per SONOFF SWV-ZF2 (dual-channel smart water valve)"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+
+[project.optional-dependencies]
+dev = [
+    "zigpy==2.1.0",
+    "zha-quirks==2.2.0",
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "tests"]
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    # zigpy 2.1 ha spostato i quirks in zhaquirks mantenendo gli shim deprecati.
+    "ignore::DeprecationWarning:zigpy.quirks",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "D", "UP", "B"]
+ignore = ["D203", "D213"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D100", "D103"]
+# Estratto verbatim dall'handoff: l'integrita' e' garantita da
+# checksums.sha256, quindi il file non va riformattato per soddisfare il linter.
+"sonoff_swv_zf2.py" = ["E501", "I001"]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
