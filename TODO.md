@@ -34,10 +34,10 @@ comunque ripetuto e coerente su quattro cicli e due canali.
 
 - **Modalità `duration` non ancora provata.** È il percorso citato dal bench di
   riferimento (ZFU: 15 min → 15:01.9) e resta da confermare su questo esemplare.
-- **`sensor.water_usage_volume` (0x501B) non riporta mai**: è rimasto `unknown`
-  durante tutte le corse. Da capire se serva una reporting config esplicita, se
-  si popoli solo su volumi maggiori, o se l'attributo non sia alimentato da
-  questo firmware. Blocca una eventuale barra di avanzamento a litri nella card.
+- ~~`sensor.water_usage_volume` non riporta mai~~ — **risolto in 0.3.0**: il
+  dispositivo rifiuta la `configure_reporting` su `0x501B`/`0x501C`
+  (`UNSUPPORTED_ATTRIBUTE`). I sensori usano ora `0x5006`/`0x5007`, che il
+  dispositivo riporta da solo. Vedi [TESTS.md](TESTS.md).
 - **Mappatura fisica CH1/CH2 → linee A/B** ancora da confermare a orecchio.
 
 ## 2. Indipendenza di `0x501D` per endpoint — FATTO (2026-08-09): è GLOBALE
@@ -142,3 +142,26 @@ Non è chiaro se sia un bene o un problema. Da chiarire:
 
 Rilevante anche per la card: se lo storico funziona, una card Sonoff potrebbe
 riusarlo invece di rinunciarvi.
+
+## 9. Verificare i campi incerti di `0x501F` — DA FARE
+
+Il decode è ricostruito dai dati e documentato in [TESTS.md](TESTS.md), ma due
+campi divergono dalla descrizione pubblica per la SWV-ZFU monocanale:
+
+- **byte 3** (modalità): il gist lo dà per riservato. Qui vale `1` in capacity e
+  `0` in duration. Confermare con una terza modalità
+  (`duration_with_interval`) per vedere se compare `2`.
+- **byte 19–20** (volume): il gist lo dà per contatore di frame. Qui cresce col
+  volume e combacia con `0x5007`. Confermare con un target grande (es. 50 L),
+  dove un contatore di frame e un volume divergerebbero in modo netto.
+
+Da verificare anche se `0x501F` venga riportato sull'endpoint 2 durante una
+corsa su CH2 — nel log catturato le corse su CH2 erano precedenti all'avvio del
+debug. Il quirk instrada comunque i report di entrambi gli endpoint sull'unico
+cluster locale, quindi funziona in ogni caso.
+
+## 10. Attributi non caratterizzati
+
+`0x5008` (cyclic timer), `0x500D` / `0x500E` (start/end time), `0x500F` (volume
+giornaliero), `0x5010` (work state). `0x500D`/`0x500E` sono i più interessanti:
+darebbero orari assoluti affidabili, che `0x501F` non offre.

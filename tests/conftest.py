@@ -117,6 +117,12 @@ def swv_cluster(quirked_device):
 
 
 @pytest.fixture
+def progress_cluster(quirked_device):
+    """Cluster locale di avanzamento 0xFBFD (solo endpoint di configurazione)."""
+    return quirked_device.endpoints[sonoff_swv_zf2.CONFIG_ENDPOINT].swvzf2_progress
+
+
+@pytest.fixture
 def manual_config_cluster(quirked_device):
     """Cluster locale di configurazione 0xFBFC (solo endpoint 1)."""
     return quirked_device.endpoints[

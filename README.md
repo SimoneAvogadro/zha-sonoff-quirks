@@ -15,8 +15,12 @@ offline.
 |---|---|---|---|
 | Water leak | binary_sensor (moisture) | 1 | `0x500C` bit 1 |
 | Water depletion | binary_sensor (problem) | 1 | `0x500C` bit 0 / bit 4 |
-| Water usage duration CH1 / CH2 | sensor (minuti) | 1 / 2 | `0x501C` |
-| Water usage volume | sensor (litri) | 1 | `0x501B` |
+| Water usage duration CH1 / CH2 | sensor (minuti) | 1 / 2 | `0x5006` |
+| Water usage volume | sensor (litri) | 1 | `0x5007` |
+| Irrigating | binary_sensor (running) | 1 | `0x501F` byte 0 |
+| Session volume | sensor (litri) | 1 | `0x501F` byte 19–20 |
+| Session elapsed | sensor (secondi) | 1 | `0x501F` current − start |
+| Session target duration | sensor (secondi) | 1 | `0x501F` end − start |
 | Irrigation mode | select | 1 | `0x501D` byte 0 |
 | Irrigation duration | number (0–719 min) | 1 | `0x501D` byte 1–2 |
 | Irrigation volume | number (0–10000 L) | 1 | `0x501D` byte 8–9 |
@@ -27,6 +31,11 @@ offline.
 > quattro entità di configurazione valgono per **entrambe** le uscite; i due
 > switch restano indipendenti, quindi scegli *quale* canale aprire, non come
 > configurarlo separatamente.
+
+Le quattro entità di sessione vengono da `0x501F`, che il dispositivo riporta
+spontaneamente **ogni ~6 secondi mentre eroga**: sono la sorgente per una barra
+di avanzamento in tempo reale. Il layout dell'attributo e tutto il resto del
+reverse engineering sono documentati in [TESTS.md](TESTS.md).
 
 I sensori di stato/consumo derivano dalla PR upstream
 [zigpy/zha-device-handlers#4993](https://github.com/zigpy/zha-device-handlers/pull/4993);
@@ -163,9 +172,13 @@ Vedi [TODO.md](TODO.md).
 l'auto-chiusura in modalità `capacity` funziona **su entrambi i canali** — la
 valvola chiude al raggiungimento del volume, ben prima del fail-safe.
 
-**Non ancora verificato**: la modalità `duration`; e
-`sensor.water_usage_volume` (`0x501B`) non ha mai riportato durante le corse,
-quindi non c'è oggi un erogato live su cui costruire una barra di avanzamento.
+**Non ancora verificato**: la modalità `duration` in quanto auto-chiusura
+cronometrata (il feed `0x501F` la riporta correttamente, ma il tempo di chiusura
+effettivo non è stato misurato).
+
+I sensori di consumo sono stati spostati da `0x501B`/`0x501C` a `0x5006`/`0x5007`:
+i primi rifiutano la `configure_reporting` e restavano `unknown` per sempre.
+Dettagli in [TESTS.md](TESTS.md).
 
 ### Aggiornamento da 0.1.0
 

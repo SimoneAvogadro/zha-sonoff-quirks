@@ -11,14 +11,18 @@ from sonoff_swv_zf2 import (
     MANUAL_SETTINGS_LEN,
     IrrigationAmountUnit,
     IrrigationMode,
+    IrrigationSessionState,
     ManualDefaultSettingsPayload,
     SWVZF2Cluster,
     SWVZF2ManualConfigCluster,
+    SWVZF2ProgressCluster,
     ValveState,
+    decode_irrigation_status,
     decode_manual_default_settings,
     normalize_manual_default_settings,
     pack_manual_default_settings,
 )
+import zigpy.types as t
 from zigpy.zcl import foundation
 
 # Payload di riferimento: mode=capacity, durata 5 min, intervallo 0/0,
@@ -35,6 +39,22 @@ REFERENCE_SETTINGS = {
 REFERENCE_WIRE = [
     0x01, 0x00, 0x05, 0x00, 0x00, 0x00,
     0x00, 0x01, 0x00, 0xFA, 0x00, 0x1E,
+]
+
+# Payload 0x501F catturati dal dispositivo il 2026-08-09 (log ZHA debug), corsa
+# in modalita' duration da 5 minuti. Vedi TESTS.md.
+STATUS_PREAMBLE_WIRE = [0, 0, 1, 0, 50, 11, 195, 23, 50, 11, 196, 67, 0, 0, 1]
+STATUS_RUNNING_WIRE = [
+    2, 0, 1, 0, 50, 11, 195, 23, 50, 11, 196, 67,
+    50, 11, 195, 29, 0, 0, 1, 0, 1,
+]
+STATUS_FINISHED_WIRE = [
+    1, 0, 1, 0, 50, 11, 195, 23, 50, 11, 196, 67,
+    50, 11, 196, 68, 0, 0, 1, 0, 30,
+]
+# Preambolo di una corsa in modalita' capacity: finestra = fail-safe (60 s).
+STATUS_CAPACITY_PREAMBLE_WIRE = [
+    0, 0, 1, 1, 50, 11, 194, 32, 50, 11, 194, 92, 0, 0, 1,
 ]
 
 
@@ -281,14 +301,24 @@ def test_update_attribute_consumes_manual_settings(swv_cluster, manual_config_cl
     assert manual_config_cluster.get("irrigation_mode") == IrrigationMode.capacity
 
 
-def test_update_attribute_consumes_schedule_status(swv_cluster):
-    """0x501F (array non caratterizzato) viene ignorato silenziosamente."""
+def test_update_attribute_consumes_irrigation_status(swv_cluster, progress_cluster):
+    """0x501F non arriva a ZHA come array ma popola il cluster di avanzamento."""
     listener = mock.MagicMock()
     swv_cluster.add_listener(listener)
 
-    swv_cluster.update_attribute(0x501F, [0, 1, 2])
+    swv_cluster.update_attribute(0x501F, STATUS_RUNNING_WIRE)
 
     listener.attribute_updated.assert_not_called()
+    assert progress_cluster.get("session_volume") == 1
+
+
+def test_update_attribute_ignores_malformed_irrigation_status(
+    swv_cluster, progress_cluster
+):
+    """Un payload 0x501F di lunghezza ignota viene scartato, non solleva."""
+    swv_cluster.update_attribute(0x501F, [0, 1, 2])
+
+    assert progress_cluster.get("session_volume") is None
 
 
 def test_update_attribute_passes_through_scalars(swv_cluster):
@@ -605,3 +635,139 @@ async def test_read_attributes_syncs_local_config(swv_cluster, manual_config_clu
 
     assert manual_config_cluster.get("irrigation_mode") == IrrigationMode.capacity
     assert manual_config_cluster.get("capacity_amount") == 250
+
+
+# --------------------------------------------------------------------------- #
+# 0x501F — avanzamento della sessione
+# --------------------------------------------------------------------------- #
+
+
+def test_decode_irrigation_status_running():
+    """Il payload da 21 byte porta stato, modalita', tempi e volume."""
+    decoded = decode_irrigation_status(STATUS_RUNNING_WIRE)
+
+    assert decoded == {
+        "session_state": IrrigationSessionState.running,
+        "session_mode": IrrigationMode.duration,
+        # end - start = 300 s, i 5 minuti impostati sul dispositivo
+        "session_target_duration": 300,
+        # current - start = 6 s, un tick dopo l'apertura
+        "session_elapsed": 6,
+        "session_volume": 1,
+    }
+
+
+def test_decode_irrigation_status_finished():
+    """L'ultimo report della corsa porta il volume totale erogato."""
+    decoded = decode_irrigation_status(STATUS_FINISHED_WIRE)
+
+    assert decoded["session_state"] == IrrigationSessionState.finished
+    assert decoded["session_elapsed"] == 301
+    assert decoded["session_volume"] == 30
+
+
+def test_decode_irrigation_status_preamble():
+    """Il payload da 15 byte annuncia la corsa: nessun current, nessun volume."""
+    decoded = decode_irrigation_status(STATUS_PREAMBLE_WIRE)
+
+    assert decoded["session_state"] == IrrigationSessionState.preamble
+    assert decoded["session_target_duration"] == 300
+    assert decoded["session_elapsed"] == 0
+    assert decoded["session_volume"] == 0
+
+
+def test_decode_irrigation_status_reads_capacity_mode():
+    """Il byte 3 distingue capacity da duration.
+
+    In capacity mode la finestra annunciata e' il fail-safe (60 s), non un
+    obiettivo di durata: e' il dispositivo a chiudere al volume raggiunto.
+    """
+    decoded = decode_irrigation_status(STATUS_CAPACITY_PREAMBLE_WIRE)
+
+    assert decoded["session_mode"] == IrrigationMode.capacity
+    assert decoded["session_target_duration"] == 60
+
+
+def test_decode_irrigation_status_accepts_zcl_array_wrapper():
+    """Sul filo l'attributo arriva incapsulato in un foundation.Array."""
+    array = foundation.Array(
+        type=foundation.DataTypeId.uint8,
+        value=ManualDefaultSettingsPayload(STATUS_RUNNING_WIRE),
+    )
+    assert decode_irrigation_status(array)["session_volume"] == 1
+
+
+@pytest.mark.parametrize("value", [None, [], [0, 1, 2], list(range(30))])
+def test_decode_irrigation_status_rejects_unknown_payloads(value):
+    """Lunghezze diverse da 15/21 non sono riconosciute: None, non eccezione."""
+    assert decode_irrigation_status(value) is None
+
+
+def test_progress_cluster_only_on_config_endpoint(quirked_device):
+    """0xFBFD e' unico: i report dei due canali confluiscono li'."""
+    ep1 = quirked_device.endpoints[CONFIG_ENDPOINT]
+    assert isinstance(ep1.swvzf2_progress, SWVZF2ProgressCluster)
+    assert not hasattr(quirked_device.endpoints[2], "swvzf2_progress")
+
+
+def test_progress_cluster_exposes_decoded_fields(swv_cluster, progress_cluster):
+    """Un report 0x501F popola tutti gli attributi di avanzamento."""
+    swv_cluster.update_attribute(0x501F, STATUS_FINISHED_WIRE)
+
+    assert progress_cluster.get("session_target_duration") == 300
+    assert progress_cluster.get("session_elapsed") == 301
+    assert progress_cluster.get("session_volume") == 30
+    assert progress_cluster.get("session_mode") == IrrigationMode.duration
+
+
+def test_irrigating_flag_tracks_session_state(swv_cluster, progress_cluster):
+    """`irrigating` e' vero solo mentre lo stato e' `running`."""
+    swv_cluster.update_attribute(0x501F, STATUS_RUNNING_WIRE)
+    assert progress_cluster.get("irrigating") == t.Bool.true
+
+    swv_cluster.update_attribute(0x501F, STATUS_FINISHED_WIRE)
+    assert progress_cluster.get("irrigating") == t.Bool.false
+
+
+def test_endpoint_2_status_routes_to_the_single_progress_cluster(
+    quirked_device, progress_cluster
+):
+    """Un report 0x501F dall'endpoint 2 aggiorna comunque l'avanzamento."""
+    quirked_device.endpoints[2].swvzf2_cluster.update_attribute(
+        0x501F, STATUS_RUNNING_WIRE
+    )
+
+    assert progress_cluster.get("session_volume") == 1
+
+
+# --------------------------------------------------------------------------- #
+# Tipi ZCL e sorgenti dei sensori di consumo
+# --------------------------------------------------------------------------- #
+
+
+def test_valve_state_is_declared_uint8_not_enum8():
+    """0x500C va dichiarato uint8: il dispositivo rifiuta enum8.
+
+    Con enum8 la configure_reporting torna INVALID_DATA_TYPE e i binary sensor
+    di allarme non riportano mai. Vedi TESTS.md.
+    """
+    assert (
+        SWVZF2Cluster.AttributeDefs.water_valve_state.zcl_type
+        == foundation.DataTypeId.uint8
+    )
+
+
+def test_live_counters_are_defined():
+    """0x5006/0x5007 sono i contatori che il dispositivo riporta davvero."""
+    assert SWVZF2Cluster.AttributeDefs.valve_open_duration.id == 0x5006
+    assert SWVZF2Cluster.AttributeDefs.irrigation_volume.id == 0x5007
+    assert SWVZF2Cluster.AttributeDefs.irrigation_status.id == 0x501F
+
+
+def test_live_counters_reach_zha(swv_cluster):
+    """I contatori live sono attributi normali: passano dritti a ZHA."""
+    swv_cluster.update_attribute(0x5006, 5)
+    swv_cluster.update_attribute(0x5007, 34)
+
+    assert swv_cluster.get("valve_open_duration") == 5
+    assert swv_cluster.get("irrigation_volume") == 34
