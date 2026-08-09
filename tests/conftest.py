@@ -7,7 +7,7 @@ from unittest import mock
 import pytest
 
 # L'import registra la quirk nel registry globale di zhaquirks.
-import sonoff_swv_zf2  # noqa: F401
+import sonoff_swv_zf2
 import zigpy.application
 import zigpy.device
 import zigpy.endpoint
@@ -118,5 +118,7 @@ def swv_cluster(quirked_device):
 
 @pytest.fixture
 def manual_config_cluster(quirked_device):
-    """Cluster locale di configurazione 0xFBFC dell'endpoint 1."""
-    return quirked_device.endpoints[1].swvzf2_manual_config
+    """Cluster locale di configurazione 0xFBFC (solo endpoint 1)."""
+    return quirked_device.endpoints[
+        sonoff_swv_zf2.CONFIG_ENDPOINT
+    ].swvzf2_manual_config

@@ -18,7 +18,7 @@ jobs:
       - name: Install dependencies
         run: uv pip install --system -e ".[dev]"
 
-      - name: Verifica integrita' della quirk contro l'handoff
+      - name: Verifica integrita' della quirk
         run: sha256sum -c checksums.sha256
 
       - name: Lint

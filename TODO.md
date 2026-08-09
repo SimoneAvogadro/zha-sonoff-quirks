@@ -1,7 +1,8 @@
 # TODO
 
 Stato al 2026-08-09. I punti 1–5 vengono dall'handoff
-([docs/HANDOFF.md](docs/HANDOFF.md)); 6–7 sono emersi scrivendo i test.
+([docs/HANDOFF.md](docs/HANDOFF.md)); 6–7 sono emersi scrivendo i test, l'8
+usando il dispositivo.
 
 ## 1. Test fisico dell'auto-chiusura — DA FARE (richiede hardware)
 
@@ -9,12 +10,14 @@ Bench di riferimento su SWV-ZFU: `mode=duration`, 15 min → chiusura a 15:01.9.
 
 Procedura su questo dispositivo:
 
-1. `Irrigation mode CH1` = `duration`, `Irrigation duration CH1` = `2`,
-   `Fail-safe timeout CH1` = `5`.
+1. `Irrigation mode` = `duration`, `Irrigation duration` = `2`,
+   `Fail-safe timeout` = `5`.
 2. Accendi `switch.swv_zf2_switch`, annota l'ora.
 3. Verifica che lo switch torni `off` da solo a ~2 min **senza** automazioni.
 4. Ripeti con `mode=capacity`, volume basso (es. 5 L), controllando
    `sensor.swv_zf2_water_usage_volume`.
+5. **Ripeti su `switch.swv_zf2_switch_2`** con la stessa config globale, per
+   sciogliere l'incognita aperta dal punto 2.
 
 Registra i risultati qui sotto.
 
@@ -22,20 +25,31 @@ Registra i risultati qui sotto.
 |---|---|---|---|---|---|
 | | | | | | |
 
-## 2. Indipendenza di `0x501D` per endpoint — DA VERIFICARE (richiede hardware)
+## 2. Indipendenza di `0x501D` per endpoint — FATTO (2026-08-09): è GLOBALE
 
-Zigbee2MQTT espone un solo `manual_default_settings`, quindi non è noto se
-scrivere `0x501D` sull'endpoint 2 configuri il canale 2 in modo indipendente.
+**Esito: la configurazione non è per canale.** `0x501D` esiste solo
+sull'endpoint 1.
 
-Test: scrivi durate diverse su CH1 e CH2, poi rileggi `0x501D` su **entrambi**
-gli endpoint e confronta.
+Come si è visto: impostando `Irrigation duration CH2` la scrittura falliva con
+`manual_default_settings are not initialized yet`. Dal traceback, la rilettura
+che il cluster locale tenta prima di scrivere **non ha sollevato eccezioni** —
+quindi il dispositivo ha risposto, semplicemente senza un valore per `0x501D`
+sull'endpoint 2. Conferma dagli stati: tutte le entità CH2 `unknown`, tutte le
+CH1 con valori reali letti dal dispositivo. Coerente con Zigbee2MQTT, che espone
+un solo `manual_default_settings` per questa famiglia.
 
-- Se le letture divergono → config per canale, quirk già corretta.
-- Se coincidono → `0x501D` è globale: le entità CH2 vanno rimosse o rese
-  alias di CH1, e il README aggiornato di conseguenza.
+Conseguenze applicate in 0.2.0:
 
-`tests/test_sonoff_swv_zf2.py::test_channel_2_writes_go_to_channel_2_cluster`
-verifica solo l'instradamento software, non il comportamento del firmware.
+- rimosse le entità di configurazione CH2 e il cluster locale `0xFBFC` sull'ep2;
+- rimosso il suffisso di canale dai nomi (`Irrigation mode`, non `... CH1`);
+- messaggio d'errore corretto: diceva «leggi prima il dispositivo» proprio dopo
+  averlo letto;
+- `0xFC11` resta sostituito su entrambi gli endpoint: i sensori di consumo per
+  canale (`0x501C`) sono un'altra cosa e non sono stati smentiti.
+
+**Nuova incognita aperta dal risultato**: cosa fa il canale 2 all'apertura? Usa
+la stessa configurazione globale e si auto-chiude anche lui, o l'irrigazione
+autonoma vale solo per CH1? Da verificare insieme al test #1.
 
 ## 3. Pytest con il test harness zhaquirks — FATTO (parziale)
 
@@ -64,8 +78,10 @@ sensori. Da proporre come commento o PR di follow-up:
 - la riparazione delle read-response con element type array duplicato;
 - il cluster locale `0xFBFC` che espande i 12 byte in entità.
 
-Prerequisito: chiudere i punti 1 e 2, altrimenti il dual-channel non è
-difendibile in review.
+Il punto 2 è chiuso (config globale), quindi la proposta si semplifica: un solo
+blocco di configurazione, nessuna pretesa di dual-channel. Resta il punto 1 come
+prerequisito: senza il test di auto-chiusura non c'è evidenza che il write path
+faccia davvero quello che dichiara.
 
 ## 6. Fallback enum morto in `decode_manual_default_settings`
 
@@ -92,3 +108,22 @@ Installazione manuale via `custom_quirks_path` resta supportata.
 non è esposta via API (né servizio né comando WebSocket accessibile dal proxy
 MCP), va fatta dalla UI: HACS → ⋮ → Custom repositories →
 `https://github.com/SimoneAvogadro/zha-sonoff-quirks`, categoria *Integration*.
+
+## 8. Adozione da parte di `tuya_irrigation` — DA CAPIRE
+
+L'integrazione `tuya_irrigation` (repo `tuya-cards-for-ha`) ha già adottato via
+discovery lo switch della SWV-ZF2: esistono
+`sensor.sonoff_swv_zf2_switch_irrigation_history` e
+`sensor.sonoff_swv_zf2_switch_irrigation_water_total`.
+
+Non è chiaro se sia un bene o un problema. Da chiarire:
+
+- il keep-alive orario e lo sweep di chiusura allo shutdown agiscono su questa
+  valvola? Con che effetto su un dispositivo che si chiude già da solo?
+- il run-log/storico si popola correttamente, o resta vuoto perché mancano le
+  DP Tuya che si aspetta?
+- conviene lasciarla fare (si ottiene lo storico gratis) o escludere il
+  dispositivo dalla discovery?
+
+Rilevante anche per la card: se lo storico funziona, una card Sonoff potrebbe
+riusarlo invece di rinunciarvi.

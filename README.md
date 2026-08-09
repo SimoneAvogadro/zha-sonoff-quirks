@@ -17,10 +17,16 @@ offline.
 | Water depletion | binary_sensor (problem) | 1 | `0x500C` bit 0 / bit 4 |
 | Water usage duration CH1 / CH2 | sensor (minuti) | 1 / 2 | `0x501C` |
 | Water usage volume | sensor (litri) | 1 | `0x501B` |
-| Irrigation mode CH1 / CH2 | select | 1 / 2 | `0x501D` byte 0 |
-| Irrigation duration CH1 / CH2 | number (0–719 min) | 1 / 2 | `0x501D` byte 1–2 |
-| Irrigation volume CH1 / CH2 | number (0–10000 L) | 1 / 2 | `0x501D` byte 8–9 |
-| Fail-safe timeout CH1 / CH2 | number (0–719 min) | 1 / 2 | `0x501D` byte 10–11 |
+| Irrigation mode | select | 1 | `0x501D` byte 0 |
+| Irrigation duration | number (0–719 min) | 1 | `0x501D` byte 1–2 |
+| Irrigation volume | number (0–10000 L) | 1 | `0x501D` byte 8–9 |
+| Fail-safe timeout | number (0–719 min) | 1 | `0x501D` byte 10–11 |
+
+> **La configurazione è globale, non per canale.** `0x501D` esiste solo
+> sull'endpoint 1 — verificato sul dispositivo, vedi [TODO.md](TODO.md) #2. Le
+> quattro entità di configurazione valgono per **entrambe** le uscite; i due
+> switch restano indipendenti, quindi scegli *quale* canale aprire, non come
+> configurarlo separatamente.
 
 I sensori di stato/consumo derivano dalla PR upstream
 [zigpy/zha-device-handlers#4993](https://github.com/zigpy/zha-device-handlers/pull/4993);
@@ -65,7 +71,7 @@ reconfigure non termina, altrimenti binding e reporting non vengono applicati e
 le entità restano `unknown`.
 
 Verifica poi in `Impostazioni → Dispositivi → SWV-ZF2` che compaiano le entità
-`number`/`select` per CH1 e CH2.
+`number`/`select` di configurazione.
 
 ### Verificare che la quirk sia attiva
 
@@ -82,10 +88,10 @@ logger:
 
 Il modello d'uso è **configura → accendi**:
 
-1. imposta `Irrigation mode CH1` su `duration` (a tempo) o `capacity` (a volume);
-2. imposta `Irrigation duration CH1` (minuti) oppure `Irrigation volume CH1` (litri);
-3. imposta `Fail-safe timeout CH1` come rete di sicurezza;
-4. accendi lo switch del canale.
+1. imposta `Irrigation mode` su `duration` (a tempo) o `capacity` (a volume);
+2. imposta `Irrigation duration` (minuti) oppure `Irrigation volume` (litri);
+3. imposta `Fail-safe timeout` come rete di sicurezza;
+4. accendi lo switch del canale che vuoi irrigare.
 
 La valvola chiude autonomamente al raggiungimento della soglia. Non serve
 un'automazione di spegnimento e il ciclo completa anche con HA spento.
@@ -95,13 +101,13 @@ Esempio di script:
 ```yaml
 irriga_orto_250_litri:
   sequence:
-    - target: {entity_id: select.swv_zf2_irrigation_mode_ch1}
+    - target: {entity_id: select.swv_zf2_irrigation_mode}
       action: select.select_option
       data: {option: capacity}
-    - target: {entity_id: number.swv_zf2_irrigation_volume_ch1}
+    - target: {entity_id: number.swv_zf2_irrigation_volume}
       action: number.set_value
       data: {value: 250}
-    - target: {entity_id: number.swv_zf2_fail_safe_timeout_ch1}
+    - target: {entity_id: number.swv_zf2_fail_safe_timeout}
       action: number.set_value
       data: {value: 60}
     - target: {entity_id: switch.swv_zf2_switch}
@@ -117,6 +123,10 @@ irriga_orto_250_litri:
 `endpoint 1 → switch`, `endpoint 2 → switch_2`. La corrispondenza con le linee
 A/B stampate sul corpo della valvola **non è ancora confermata**: verificala a
 orecchio (click del motorino) prima di affidarci un'automazione.
+
+Poiché la configurazione è condivisa, per irrigare i due canali con parametri
+diversi devi **serializzare**: configura, apri CH1, attendi la chiusura,
+riconfigura, apri CH2.
 
 ## Sviluppo
 
@@ -148,9 +158,16 @@ IO di rete, nessun dispositivo richiesto.
 ## Stato e limiti noti
 
 Vedi [TODO.md](TODO.md). In breve: la logica di codifica/decodifica è coperta da
-test, l'**indipendenza per-endpoint di `0x501D` sul canale 2 non è verificata sul
-dispositivo reale** (fallback atteso: la config di ep1 vale per entrambi i
-canali).
+test e la configurazione globale è verificata sul dispositivo. Resta aperto il
+**test fisico dell'auto-chiusura** (#1) e, ora che la config è condivisa, il
+comportamento del canale 2 all'apertura.
+
+### Aggiornamento da 0.1.0
+
+Le entità di configurazione hanno perso il suffisso di canale, quindi cambiano
+`unique_id` ed `entity_id`. Dopo l'aggiornamento: elimina dal registro le vecchie
+`*_ch1` e `*_ch2` rimaste orfane e aggiorna eventuali automazioni o script che le
+referenziavano.
 
 ## Licenza
 

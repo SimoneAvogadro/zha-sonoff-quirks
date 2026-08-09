@@ -4,9 +4,16 @@
 
 > Copia in-repo del documento originale su Google Drive
 > (`AI/Claude/zha-sonoff-quirks/HANDOFF.md`). Il code block Python è stato
-> estratto in [`sonoff_swv_zf2.py`](../sonoff_swv_zf2.py) — SHA256 verificato e
-> combaciante — e qui sostituito da un rimando. Lo stato di avanzamento dei TODO
-> è tracciato in [`TODO.md`](../TODO.md).
+> estratto in
+> [`custom_components/zha_sonoff_quirks/quirks/sonoff_swv_zf2.py`](../custom_components/zha_sonoff_quirks/quirks/sonoff_swv_zf2.py)
+> — SHA256 verificato e combaciante all'estrazione. Lo stato di avanzamento dei
+> TODO è tracciato in [`TODO.md`](../TODO.md).
+>
+> **Il file è successivamente divergiuto dall'handoff.** Il TODO #2 è stato
+> eseguito sul dispositivo il 2026-08-09 e ha smentito l'ipotesi del
+> dual-channel: `0x501D` è globale, non per canale. Le entità di configurazione
+> CH2 sono state rimosse. `checksums.sha256` protegge ora la versione corrente,
+> non l'estratto originale.
 
 ## Cosa fare
 
@@ -35,6 +42,8 @@ import + registrazione OK contro zigpy 2.1.0 / zha-quirks 2.2.0, round-trip pack
   se 0x501D su ep2 configuri il canale 2 in modo indipendente (Z2M espone un solo
   manual_default_settings): da testare sul dispositivo; fallback atteso = config su ep1
   vale per entrambi.
+  > **SMENTITO il 2026-08-09.** Si è verificato il fallback atteso: `0x501D`
+  > esiste solo sull'endpoint 1. Config globale, entità CH2 rimosse.
 - **Robustezza**: deserialize() ripara le read-response 0x501D con element-type array
   duplicato (bug noto famiglia SWV); _update_attribute consuma 0x501D e 0x501F per
   evitare gli errori appdb "type Array is not supported".
@@ -51,12 +60,13 @@ import + registrazione OK contro zigpy 2.1.0 / zha-quirks 2.2.0, round-trip pack
 
 ## Sorgente `sonoff_swv_zf2.py`
 
-Il code block dell'originale è stato estratto verbatim in
-[`../sonoff_swv_zf2.py`](../sonoff_swv_zf2.py).
+Il code block dell'originale è stato estratto verbatim; l'estratto combaciava
+con l'hash dichiarato sopra:
 
-Verifica dell'integrità:
-
-```bash
-sha256sum sonoff_swv_zf2.py
-# 16908bf9bd7de570c40f0a654d04be2aa89f2987587b2cb90253cc4ebf84e337
 ```
+16908bf9bd7de570c40f0a654d04be2aa89f2987587b2cb90253cc4ebf84e337
+```
+
+Quell'hash è ora **storico**: vale per il commit `f2f02da`, prima della
+correzione del dual-channel. Per l'integrità della versione corrente vedi
+`checksums.sha256` in root.

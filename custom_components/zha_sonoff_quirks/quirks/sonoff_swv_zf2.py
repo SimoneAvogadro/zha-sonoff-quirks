@@ -5,14 +5,26 @@ Fonti (entrambe revisionate riga per riga, nessun codice di rete/IO):
   su SWV-ZF2U fw 0x00001007 (stesso firmware di questo dispositivo).
 - Controllo 0x501D manual_default_settings: pattern bench-verified su fw
   0x00001007 (gist nglessner, companion della PR #4927), qui riscritto senza
-  event-system per massima compatibilita' e adattato al dual-channel
-  (cluster 0xFC11 presente su endpoint 1 e 2 -> config per canale).
+  event-system per massima compatibilita'.
+
+La configurazione e' GLOBALE, non per canale
+-------------------------------------------
+Il cluster 0xFC11 e' presente sia sull'endpoint 1 sia sull'endpoint 2, ma
+0x501D esiste SOLO sull'endpoint 1: una read sull'endpoint 2 riceve risposta
+dal dispositivo senza valore per l'attributo. Verificato sul dispositivo il
+2026-08-09 (fw 0x00001007), coerente con Zigbee2MQTT che espone un solo
+`manual_default_settings` per questa famiglia.
+
+Le entita' di configurazione sono quindi UNA sola serie, senza suffisso di
+canale, e valgono per entrambe le uscite. I due switch (endpoint 1 e 2)
+restano indipendenti: si sceglie QUALE canale aprire, non come configurarlo
+separatamente.
 
 Modello d'uso "irrigazione a litri / temporizzata":
-  1. impostare le entita' del canale: modalita' (duration/capacity),
+  1. impostare le entita' di configurazione: modalita' (duration/capacity),
      durata (min) o volume (L), fail-safe (min);
-  2. accendere lo switch del canale: la valvola si chiude AUTONOMAMENTE
-     sul dispositivo (funziona anche se HA e' offline).
+  2. accendere lo switch del canale desiderato: la valvola si chiude
+     AUTONOMAMENTE sul dispositivo (funziona anche se HA e' offline).
 
 Formato wire 0x501D (12 byte uint8 array, campi big-endian):
   [0]     irrigation_mode   0=duration 1=capacity 2=duration_with_interval
@@ -43,6 +55,10 @@ from zigpy.zcl.foundation import BaseAttributeDefs, ZCLAttributeDef
 from zhaquirks import LocalDataCluster
 
 MANUAL_SETTINGS_LEN: Final = 12
+
+#: Endpoint che ospita 0x501D. La configurazione e' globale: l'endpoint 2 non
+#: risponde alla read dell'attributo (vedi docstring del modulo).
+CONFIG_ENDPOINT: Final = 1
 
 
 class ValveState(t.enum8):
@@ -434,7 +450,17 @@ class SWVZF2ManualConfigCluster(LocalDataCluster):
             await self.endpoint.swvzf2_cluster.read_attributes(
                 [SWVZF2Cluster.AttributeDefs.manual_default_settings.id]
             )
-            settings = self._current_settings()
+            try:
+                settings = self._current_settings()
+            except ValueError as exc:
+                # La read e' andata a buon fine come richiesta ma non ha
+                # restituito 0x501D: il messaggio "leggi prima il dispositivo"
+                # sarebbe fuorviante, l'abbiamo appena fatto.
+                raise ValueError(
+                    "the device did not return manual_default_settings (0x501D) "
+                    f"on endpoint {self.endpoint.endpoint_id}; irrigation "
+                    "settings cannot be written"
+                ) from exc
 
         for attr, value in attributes.items():
             attr_name = self.find_attribute(attr).name
@@ -462,59 +488,63 @@ class SWVZF2ManualConfigCluster(LocalDataCluster):
         )
 
 
-def _register_channel_entities(builder: QuirkBuilder, ep: int) -> QuirkBuilder:
-    """Registra le entita' di controllo irrigazione per un canale/endpoint."""
-    ch = f"ch{ep}"
+def _register_config_entities(builder: QuirkBuilder) -> QuirkBuilder:
+    """Registra le entita' di configurazione dell'irrigazione manuale.
+
+    Un blocco solo, sull'endpoint 1: 0x501D e' un attributo GLOBALE del
+    dispositivo, non per canale (vedi la nota nel docstring del modulo). I nomi
+    non portano quindi alcun suffisso di canale.
+    """
     return (
         builder.enum(
             SWVZF2ManualConfigCluster.AttributeDefs.irrigation_mode.name,
             IrrigationMode,
             SWVZF2ManualConfigCluster.cluster_id,
-            endpoint_id=ep,
+            endpoint_id=CONFIG_ENDPOINT,
             entity_type=EntityType.CONFIG,
-            unique_id_suffix=f"irrigation_mode_{ch}",
-            translation_key=f"irrigation_mode_{ch}",
-            fallback_name=f"Irrigation mode CH{ep}",
+            unique_id_suffix="irrigation_mode",
+            translation_key="irrigation_mode",
+            fallback_name="Irrigation mode",
         )
         .number(
             SWVZF2ManualConfigCluster.AttributeDefs.irrigation_total_duration.name,
             SWVZF2ManualConfigCluster.cluster_id,
-            endpoint_id=ep,
+            endpoint_id=CONFIG_ENDPOINT,
             entity_type=EntityType.CONFIG,
             min_value=0,
             max_value=719,
             step=1,
             unit=UnitOfTime.MINUTES,
             device_class=NumberDeviceClass.DURATION,
-            unique_id_suffix=f"irrigation_duration_{ch}",
-            translation_key=f"irrigation_duration_{ch}",
-            fallback_name=f"Irrigation duration CH{ep}",
+            unique_id_suffix="irrigation_duration",
+            translation_key="irrigation_duration",
+            fallback_name="Irrigation duration",
         )
         .number(
             SWVZF2ManualConfigCluster.AttributeDefs.capacity_amount.name,
             SWVZF2ManualConfigCluster.cluster_id,
-            endpoint_id=ep,
+            endpoint_id=CONFIG_ENDPOINT,
             entity_type=EntityType.CONFIG,
             min_value=0,
             max_value=10000,
             step=1,
             unit=UnitOfVolume.LITERS,
-            unique_id_suffix=f"irrigation_volume_{ch}",
-            translation_key=f"irrigation_volume_{ch}",
-            fallback_name=f"Irrigation volume CH{ep}",
+            unique_id_suffix="irrigation_volume",
+            translation_key="irrigation_volume",
+            fallback_name="Irrigation volume",
         )
         .number(
             SWVZF2ManualConfigCluster.AttributeDefs.fail_safe.name,
             SWVZF2ManualConfigCluster.cluster_id,
-            endpoint_id=ep,
+            endpoint_id=CONFIG_ENDPOINT,
             entity_type=EntityType.CONFIG,
             min_value=0,
             max_value=719,
             step=1,
             unit=UnitOfTime.MINUTES,
-            unique_id_suffix=f"fail_safe_{ch}",
-            translation_key=f"fail_safe_{ch}",
-            fallback_name=f"Fail-safe timeout CH{ep}",
+            unique_id_suffix="fail_safe",
+            translation_key="fail_safe",
+            fallback_name="Fail-safe timeout",
         )
     )
 
@@ -525,8 +555,9 @@ _builder = (
     .also_applies_to("SONOFF", "SWV-ZF2E")
     .replaces(SWVZF2Cluster)
     .replaces(SWVZF2Cluster, endpoint_id=2)
-    .adds(SWVZF2ManualConfigCluster)
-    .adds(SWVZF2ManualConfigCluster, endpoint_id=2)
+    # Il cluster locale di configurazione esiste solo sull'endpoint 1: 0x501D
+    # e' globale, sull'endpoint 2 non risponde (UNSUPPORTED_ATTRIBUTE).
+    .adds(SWVZF2ManualConfigCluster, endpoint_id=CONFIG_ENDPOINT)
     # Perdita acqua (bit1 di 0x500C)
     .binary_sensor(
         SWVZF2Cluster.AttributeDefs.water_valve_state.name,
@@ -597,6 +628,5 @@ _builder = (
     )
 )
 
-_builder = _register_channel_entities(_builder, 1)
-_builder = _register_channel_entities(_builder, 2)
+_builder = _register_config_entities(_builder)
 _builder.add_to_registry()

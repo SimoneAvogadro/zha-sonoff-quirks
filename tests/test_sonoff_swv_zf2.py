@@ -7,6 +7,7 @@ from unittest import mock
 from conftest import build_zigpy_device
 import pytest
 from sonoff_swv_zf2 import (
+    CONFIG_ENDPOINT,
     MANUAL_SETTINGS_LEN,
     IrrigationAmountUnit,
     IrrigationMode,
@@ -64,22 +65,27 @@ def test_quirk_does_not_match_other_devices(app):
     assert not hasattr(quirked.endpoints[1], "swvzf2_cluster")
 
 
-def test_clusters_present_on_both_channels(quirked_device):
-    """0xFC11 sostituito e 0xFBFC aggiunto su entrambi gli endpoint."""
+def test_swv_cluster_replaced_on_both_endpoints(quirked_device):
+    """0xFC11 e' sostituito su entrambi gli endpoint (sensori per canale)."""
     for ep_id in (1, 2):
         endpoint = quirked_device.endpoints[ep_id]
         assert isinstance(endpoint.swvzf2_cluster, SWVZF2Cluster)
-        assert isinstance(endpoint.swvzf2_manual_config, SWVZF2ManualConfigCluster)
         assert endpoint.in_clusters[0xFC11] is endpoint.swvzf2_cluster
-        assert endpoint.in_clusters[0xFBFC] is endpoint.swvzf2_manual_config
 
 
-def test_manual_config_clusters_are_independent(quirked_device):
-    """I due canali hanno istanze distinte del cluster di configurazione."""
-    assert (
-        quirked_device.endpoints[1].swvzf2_manual_config
-        is not quirked_device.endpoints[2].swvzf2_manual_config
-    )
+def test_manual_config_cluster_only_on_config_endpoint(quirked_device):
+    """0xFBFC esiste solo sull'endpoint 1: 0x501D e' globale, non per canale.
+
+    Sull'endpoint 2 il dispositivo risponde alla read senza restituire
+    l'attributo, quindi esporre li' un secondo blocco di configurazione
+    produrrebbe entita' che falliscono a ogni scrittura.
+    """
+    ep1 = quirked_device.endpoints[CONFIG_ENDPOINT]
+    assert isinstance(ep1.swvzf2_manual_config, SWVZF2ManualConfigCluster)
+    assert ep1.in_clusters[0xFBFC] is ep1.swvzf2_manual_config
+
+    assert not hasattr(quirked_device.endpoints[2], "swvzf2_manual_config")
+    assert 0xFBFC not in quirked_device.endpoints[2].in_clusters
 
 
 def test_attribute_definitions(quirked_device):
@@ -515,25 +521,44 @@ async def test_local_write_coerces_enums(swv_cluster, manual_config_cluster):
 
 
 @pytest.mark.asyncio
-async def test_channel_2_writes_go_to_channel_2_cluster(quirked_device):
-    """La config del canale 2 e' instradata al cluster 0xFC11 dell'endpoint 2."""
-    ep2 = quirked_device.endpoints[2]
-    ep2.swvzf2_manual_config.update_from_manual_default_settings(REFERENCE_WIRE)
+async def test_config_writes_never_touch_endpoint_2(quirked_device):
+    """La config va sempre sul cluster 0xFC11 dell'endpoint 1, mai sull'ep2."""
+    manual_config = quirked_device.endpoints[CONFIG_ENDPOINT].swvzf2_manual_config
+    manual_config.update_from_manual_default_settings(REFERENCE_WIRE)
 
     with mock.patch.object(
-        quirked_device.endpoints[1].swvzf2_cluster,
+        quirked_device.endpoints[CONFIG_ENDPOINT].swvzf2_cluster,
         "write_attributes",
         new=mock.AsyncMock(return_value=[[]]),
     ) as ep1_write:
         with mock.patch.object(
-            ep2.swvzf2_cluster, "write_attributes", new=mock.AsyncMock(
-                return_value=[[]]
-            )
+            quirked_device.endpoints[2].swvzf2_cluster,
+            "write_attributes",
+            new=mock.AsyncMock(return_value=[[]]),
         ) as ep2_write:
-            await ep2.swvzf2_manual_config.write_attributes({"fail_safe": 15})
+            await manual_config.write_attributes({"fail_safe": 15})
 
-    ep1_write.assert_not_awaited()
-    ep2_write.assert_awaited_once()
+    ep1_write.assert_awaited_once()
+    ep2_write.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_write_reports_when_device_withholds_settings(
+    swv_cluster, manual_config_cluster
+):
+    """Se la read non restituisce 0x501D, l'errore non dice "leggi prima".
+
+    E' il caso osservato sull'endpoint 2 prima della correzione: il dispositivo
+    risponde ma senza l'attributo, e il vecchio messaggio suggeriva un'azione
+    che era gia' stata eseguita.
+    """
+    with mock.patch.object(
+        swv_cluster, "read_attributes", new=mock.AsyncMock(return_value=({}, {}))
+    ) as read:
+        with pytest.raises(ValueError, match="did not return manual_default_settings"):
+            await manual_config_cluster.write_attributes({"fail_safe": 15})
+
+    read.assert_awaited_once()
 
 
 # --------------------------------------------------------------------------- #
