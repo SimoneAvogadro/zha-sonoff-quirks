@@ -81,14 +81,14 @@ appartenenza esplicito.
 
 Documentato in `test_decode_survives_unknown_enum_values`.
 
-## 7. Distribuzione via HACS — DA DECIDERE
+## 7. Distribuzione via HACS — FATTO (repo), DA COMPLETARE (aggiunta in HACS)
 
-HACS non ha una categoria per le ZHA quirk. Serve decidere fra:
+HACS non ha una categoria per le ZHA quirk, quindi il repo segue lo stesso
+schema già in uso in `SimoneAvogadro/zha-tuya-quirks`: categoria `integration`,
+con `custom_components/zha_sonoff_quirks/` che importa la quirk all'avvio.
+Installazione manuale via `custom_quirks_path` resta supportata.
 
-- **installazione manuale** (documentata nel README) — zero infrastruttura;
-- **repo HACS di categoria `integration`** che si installa in
-  `custom_components/sonoff_swv_zf2/` con la quirk in una sottocartella, e
-  `custom_quirks_path` puntato lì.
-
-Prerequisito in entrambi i casi: pubblicare il repo su GitHub (attualmente non
-c'è nessun remote configurato).
+**Residuo**: aggiungere il repo come *custom repository* in HACS. L'operazione
+non è esposta via API (né servizio né comando WebSocket accessibile dal proxy
+MCP), va fatta dalla UI: HACS → ⋮ → Custom repositories →
+`https://github.com/SimoneAvogadro/zha-sonoff-quirks`, categoria *Integration*.

@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up ZHA Sonoff Quirks",
+        "description": "Click Submit to enable the ZHA Sonoff Quirks integration. It registers the bundled ZHA custom quirks for SONOFF Zigbee devices (currently the SWV-ZF2 dual-channel water valve). There is nothing to configure here. A Home Assistant restart may be required for the quirks to apply to already-joined devices, followed by a Reconfigure on the device."
+      }
+    },
+    "abort": {
+      "already_configured": "ZHA Sonoff Quirks is already set up."
+    }
+  }
+}

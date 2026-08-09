@@ -6,8 +6,6 @@ from unittest import mock
 
 from conftest import build_zigpy_device
 import pytest
-from zigpy.zcl import foundation
-
 from sonoff_swv_zf2 import (
     MANUAL_SETTINGS_LEN,
     IrrigationAmountUnit,
@@ -20,6 +18,7 @@ from sonoff_swv_zf2 import (
     normalize_manual_default_settings,
     pack_manual_default_settings,
 )
+from zigpy.zcl import foundation
 
 # Payload di riferimento: mode=capacity, durata 5 min, intervallo 0/0,
 # unita' litri, volume 250 L, fail-safe 30 min.

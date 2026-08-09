@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configura ZHA Sonoff Quirks",
+        "description": "Premi Invia per abilitare l'integrazione ZHA Sonoff Quirks. Registra i quirk ZHA personalizzati per dispositivi SONOFF Zigbee (al momento l'elettrovalvola dual-channel SWV-ZF2). Non c'è nulla da configurare qui. Potrebbe essere necessario riavviare Home Assistant affinché i quirk vengano applicati ai dispositivi già accoppiati, seguito da un Reconfigure sul dispositivo."
+      }
+    },
+    "abort": {
+      "already_configured": "ZHA Sonoff Quirks è già configurato."
+    }
+  }
+}

@@ -30,8 +30,22 @@ adattato al dual-channel.
 
 ## Installazione
 
-1. Copia `sonoff_swv_zf2.py` in una cartella del tuo Home Assistant, per esempio
-   `/config/custom_zha_quirks/`.
+### Via HACS (consigliata)
+
+1. HACS → menu ⋮ → **Custom repositories** → aggiungi
+   `https://github.com/SimoneAvogadro/zha-sonoff-quirks` con categoria
+   **Integration**.
+2. Cerca *ZHA Sonoff Quirks*, **Download**.
+3. **Riavvia Home Assistant.**
+4. `Impostazioni → Dispositivi e servizi → Aggiungi integrazione → ZHA Sonoff
+   Quirks` → Invia. Non c'è nulla da configurare: l'integrazione serve solo a
+   far importare la quirk all'avvio.
+5. Prosegui con il **Reconfigure** del dispositivo (vedi sotto).
+
+### Manuale
+
+1. Copia `custom_components/zha_sonoff_quirks/quirks/sonoff_swv_zf2.py` in una
+   cartella del tuo Home Assistant, per esempio `/config/custom_zha_quirks/`.
 
 2. Punta ZHA a quella cartella in `configuration.yaml`:
 
@@ -43,14 +57,15 @@ adattato al dual-channel.
 3. **Riavvia Home Assistant** (non basta il reload di ZHA: le quirk vengono
    caricate all'avvio).
 
-4. Nel device SWV-ZF2 in ZHA, premi **Reconfigure**. È **obbligatorio**: la
-   valvola è un device sleepy, quindi
-   **sveglia il dispositivo prima** (premi il pulsante fisico) e tienilo sveglio
-   finché il reconfigure non termina, altrimenti binding e reporting non vengono
-   applicati e le entità restano `unknown`.
+### Reconfigure (obbligatorio, in entrambi i casi)
 
-5. Verifica in `Impostazioni → Dispositivi → SWV-ZF2` che compaiano le entità
-   `number`/`select` per CH1 e CH2.
+Nel device SWV-ZF2 in ZHA premi **Reconfigure**. La valvola è un device sleepy:
+**svegliala prima** (premi il pulsante fisico) e tienila sveglia finché il
+reconfigure non termina, altrimenti binding e reporting non vengono applicati e
+le entità restano `unknown`.
+
+Verifica poi in `Impostazioni → Dispositivi → SWV-ZF2` che compaiano le entità
+`number`/`select` per CH1 e CH2.
 
 ### Verificare che la quirk sia attiva
 
@@ -111,6 +126,21 @@ uv pip install -e ".[dev]"
 .venv/bin/python -m pytest
 .venv/bin/python -m ruff check .
 ```
+
+Layout:
+
+```
+custom_components/zha_sonoff_quirks/
+  __init__.py        # importa quirks/ all'avvio -> registrazione nel registry
+  config_flow.py     # flow a un click, nessuna opzione
+  quirks/
+    sonoff_swv_zf2.py  # LA quirk (unica copia; integrità in checksums.sha256)
+tests/               # 39 test offline, nessun dispositivo richiesto
+```
+
+La quirk è volutamente **self-contained**: non importa nulla
+dall'integrazione, così funziona identica sia caricata da HACS sia droppata in
+`custom_quirks_path`.
 
 I test girano interamente offline con un `ControllerApplication` finto: nessuna
 IO di rete, nessun dispositivo richiesto.

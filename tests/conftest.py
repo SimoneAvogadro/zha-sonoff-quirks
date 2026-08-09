@@ -5,15 +5,15 @@ from __future__ import annotations
 from unittest import mock
 
 import pytest
+
+# L'import registra la quirk nel registry globale di zhaquirks.
+import sonoff_swv_zf2  # noqa: F401
 import zigpy.application
 import zigpy.device
 import zigpy.endpoint
 import zigpy.types as t
 from zigpy.zcl import foundation
 from zigpy.zdo import types as zdo_t
-
-# L'import registra la quirk nel registry globale di zhaquirks.
-import sonoff_swv_zf2  # noqa: F401
 
 #: Firmware osservato sul dispositivo di riferimento (SWV-ZF2E, ~1.0.7).
 SWV_ZF2_FW_VERSION = 0x00001007
