@@ -157,10 +157,15 @@ IO di rete, nessun dispositivo richiesto.
 
 ## Stato e limiti noti
 
-Vedi [TODO.md](TODO.md). In breve: la logica di codifica/decodifica è coperta da
-test e la configurazione globale è verificata sul dispositivo. Resta aperto il
-**test fisico dell'auto-chiusura** (#1) e, ora che la config è condivisa, il
-comportamento del canale 2 all'apertura.
+Vedi [TODO.md](TODO.md).
+
+**Verificato sul dispositivo** (fw `0x00001007`): la configurazione è globale, e
+l'auto-chiusura in modalità `capacity` funziona **su entrambi i canali** — la
+valvola chiude al raggiungimento del volume, ben prima del fail-safe.
+
+**Non ancora verificato**: la modalità `duration`; e
+`sensor.water_usage_volume` (`0x501B`) non ha mai riportato durante le corse,
+quindi non c'è oggi un erogato live su cui costruire una barra di avanzamento.
 
 ### Aggiornamento da 0.1.0
 

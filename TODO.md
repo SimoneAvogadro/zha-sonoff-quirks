@@ -4,26 +4,41 @@ Stato al 2026-08-09. I punti 1–5 vengono dall'handoff
 ([docs/HANDOFF.md](docs/HANDOFF.md)); 6–7 sono emersi scrivendo i test, l'8
 usando il dispositivo.
 
-## 1. Test fisico dell'auto-chiusura — DA FARE (richiede hardware)
+## 1. Test fisico dell'auto-chiusura — FATTO in modalità litri (2026-08-09)
 
-Bench di riferimento su SWV-ZFU: `mode=duration`, 15 min → chiusura a 15:01.9.
+**La valvola si chiude da sola.** Verificato in modalità `capacity` con
+`Irrigation volume` = 1 L e `Fail-safe timeout` = 1 min.
 
-Procedura su questo dispositivo:
+Cicli osservati nello storico di HA (orari UTC, durata = `on` → `off`):
 
-1. `Irrigation mode` = `duration`, `Irrigation duration` = `2`,
-   `Fail-safe timeout` = `5`.
-2. Accendi `switch.swv_zf2_switch`, annota l'ora.
-3. Verifica che lo switch torni `off` da solo a ~2 min **senza** automazioni.
-4. Ripeti con `mode=capacity`, volume basso (es. 5 L), controllando
-   `sensor.swv_zf2_water_usage_volume`.
-5. **Ripeti su `switch.swv_zf2_switch_2`** con la stessa config globale, per
-   sciogliere l'incognita aperta dal punto 2.
+| Ora | Canale | Durata |
+|---|---|---|
+| 14:17:35 | CH1 | 12,2 s |
+| 14:22:32 | CH1 | 16,2 s |
+| 14:22:54 | CH2 | 16,2 s |
+| 14:23:24 | CH2 | 8,1 s |
 
-Registra i risultati qui sotto.
+Le chiusure arrivano **molto prima** del fail-safe di 1 minuto, quindi non è la
+rete di sicurezza a intervenire: è il raggiungimento del volume target. Le
+durate variano con la pressione, come atteso per un target volumetrico.
 
-| Data | Canale | Modo | Setpoint | Chiusura effettiva | Note |
-|---|---|---|---|---|---|
-| | | | | | |
+**Risolve anche l'incognita aperta dal punto 2**: il canale 2 si auto-chiude
+esattamente come il canale 1, usando la configurazione globale. L'irrigazione
+autonoma non è una prerogativa di CH1.
+
+Caveat: le durate sono transizioni di stato viste da HA su un dispositivo
+sleepy, quindi la chiusura fisica può precedere di poco il report. Il segnale è
+comunque ripetuto e coerente su quattro cicli e due canali.
+
+### Residuo
+
+- **Modalità `duration` non ancora provata.** È il percorso citato dal bench di
+  riferimento (ZFU: 15 min → 15:01.9) e resta da confermare su questo esemplare.
+- **`sensor.water_usage_volume` (0x501B) non riporta mai**: è rimasto `unknown`
+  durante tutte le corse. Da capire se serva una reporting config esplicita, se
+  si popoli solo su volumi maggiori, o se l'attributo non sia alimentato da
+  questo firmware. Blocca una eventuale barra di avanzamento a litri nella card.
+- **Mappatura fisica CH1/CH2 → linee A/B** ancora da confermare a orecchio.
 
 ## 2. Indipendenza di `0x501D` per endpoint — FATTO (2026-08-09): è GLOBALE
 
@@ -47,9 +62,8 @@ Conseguenze applicate in 0.2.0:
 - `0xFC11` resta sostituito su entrambi gli endpoint: i sensori di consumo per
   canale (`0x501C`) sono un'altra cosa e non sono stati smentiti.
 
-**Nuova incognita aperta dal risultato**: cosa fa il canale 2 all'apertura? Usa
-la stessa configurazione globale e si auto-chiude anche lui, o l'irrigazione
-autonoma vale solo per CH1? Da verificare insieme al test #1.
+**Incognita aperta dal risultato, poi sciolta**: il canale 2 usa la stessa
+configurazione globale e si auto-chiude come il canale 1 — verificato, vedi #1.
 
 ## 3. Pytest con il test harness zhaquirks — FATTO (parziale)
 
@@ -78,10 +92,11 @@ sensori. Da proporre come commento o PR di follow-up:
 - la riparazione delle read-response con element type array duplicato;
 - il cluster locale `0xFBFC` che espande i 12 byte in entità.
 
-Il punto 2 è chiuso (config globale), quindi la proposta si semplifica: un solo
-blocco di configurazione, nessuna pretesa di dual-channel. Resta il punto 1 come
-prerequisito: senza il test di auto-chiusura non c'è evidenza che il write path
-faccia davvero quello che dichiara.
+I punti 1 e 2 sono ora sostanzialmente chiusi: configurazione globale, e
+auto-chiusura confermata in modalità litri su entrambi i canali. La proposta si
+semplifica (un solo blocco di configurazione, nessuna pretesa di dual-channel) e
+ha ora evidenza sul campo che il write path fa davvero quello che dichiara.
+Prima di aprirla converrebbe provare anche la modalità `duration`.
 
 ## 6. Fallback enum morto in `decode_manual_default_settings`
 
