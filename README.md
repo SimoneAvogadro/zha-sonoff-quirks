@@ -1,91 +1,90 @@
 # zha-sonoff-quirks
 
-Custom ZHA quirk per **SONOFF SWV-ZF2** — elettrovalvola Zigbee per irrigazione a
-**due canali** (varianti di mercato `SWV-ZF2E` / `SWV-ZF2U`, stesso firmware
-`0x00001007`).
+Custom ZHA quirk for the **SONOFF SWV-ZF2** — a **dual-channel** Zigbee
+irrigation valve (sold as `SWV-ZF2E` / `SWV-ZF2U` depending on market, same
+firmware `0x00001007`).
 
-Rispetto al supporto upstream, questa quirk aggiunge il **controllo
-dell'irrigazione autonoma on-device**: si configura durata o volume, si accende
-lo switch del canale e **la valvola chiude da sola**, anche se Home Assistant è
-offline.
+On top of upstream support, this quirk adds **control of the valve's on-device
+autonomous irrigation**: set a duration or a volume, turn the channel's switch
+on, and **the valve closes by itself** — even if Home Assistant is offline.
 
-## Cosa espone
+## What it exposes
 
-| Entità | Tipo | Endpoint | Attributo |
+| Entity | Type | Endpoint | Attribute |
 |---|---|---|---|
 | Water leak | binary_sensor (moisture) | 1 | `0x500C` bit 1 |
 | Water depletion | binary_sensor (problem) | 1 | `0x500C` bit 0 / bit 4 |
-| Water usage duration CH1 / CH2 | sensor (minuti) | 1 / 2 | `0x5006` |
-| Water usage volume | sensor (litri) | 1 | `0x5007` |
+| Water usage duration CH1 / CH2 | sensor (minutes) | 1 / 2 | `0x5006` |
+| Water usage volume | sensor (litres) | 1 | `0x5007` |
 | Irrigating | binary_sensor (running) | 1 | `0x501F` byte 0 |
-| Session volume | sensor (litri) | 1 | `0x501F` byte 19–20 |
-| Session elapsed | sensor (secondi) | 1 | `0x501F` current − start |
-| Session target duration | sensor (secondi) | 1 | `0x501F` end − start |
+| Session volume | sensor (litres) | 1 | `0x501F` bytes 19–20 |
+| Session elapsed | sensor (seconds) | 1 | `0x501F` current − start |
+| Session target duration | sensor (seconds) | 1 | `0x501F` end − start |
 | Irrigation mode | select | 1 | `0x501D` byte 0 |
-| Irrigation duration | number (0–719 min) | 1 | `0x501D` byte 1–2 |
-| Irrigation volume | number (0–10000 L) | 1 | `0x501D` byte 8–9 |
-| Fail-safe timeout | number (0–719 min) | 1 | `0x501D` byte 10–11 |
+| Irrigation duration | number (0–719 min) | 1 | `0x501D` bytes 1–2 |
+| Irrigation volume | number (0–10000 L) | 1 | `0x501D` bytes 8–9 |
+| Fail-safe timeout | number (0–719 min) | 1 | `0x501D` bytes 10–11 |
 
-> **La configurazione è globale, non per canale.** `0x501D` esiste solo
-> sull'endpoint 1 — verificato sul dispositivo, vedi [TODO.md](TODO.md) #2. Le
-> quattro entità di configurazione valgono per **entrambe** le uscite; i due
-> switch restano indipendenti, quindi scegli *quale* canale aprire, non come
-> configurarlo separatamente.
+> **The configuration is global, not per channel.** `0x501D` only exists on
+> endpoint 1 — verified on the device, see [TODO.md](TODO.md) #2. The four
+> configuration entities apply to **both** outlets; the two switches stay
+> independent, so you choose *which* channel to open, not how to configure each
+> one separately.
 
-Le quattro entità di sessione vengono da `0x501F`, che il dispositivo riporta
-spontaneamente **ogni ~6 secondi mentre eroga**: sono la sorgente per una barra
-di avanzamento in tempo reale. Il layout dell'attributo e tutto il resto del
-reverse engineering sono documentati in [TESTS.md](TESTS.md).
+The four session entities come from `0x501F`, which the device reports
+spontaneously **every ~6 seconds while it is running**: that is the source for a
+real-time progress bar. The attribute layout and the rest of the reverse
+engineering are documented in [TESTS.md](TESTS.md).
 
-I sensori di stato/consumo derivano dalla PR upstream
+The state and usage sensors derive from upstream PR
 [zigpy/zha-device-handlers#4993](https://github.com/zigpy/zha-device-handlers/pull/4993);
-il controllo `manual_default_settings` (`0x501D`) dal pattern bench-verified del
-gist di nglessner, companion della PR #4927, qui riscritto senza event-system e
-adattato al dual-channel.
+the `manual_default_settings` (`0x501D`) control comes from the bench-verified
+pattern in nglessner's gist, companion to PR #4927, rewritten here without the
+event system and adapted to the dual-channel model.
 
-## Installazione
+## Installation
 
-### Via HACS (consigliata)
+### Via HACS (recommended)
 
-1. HACS → menu ⋮ → **Custom repositories** → aggiungi
-   `https://github.com/SimoneAvogadro/zha-sonoff-quirks` con categoria
+1. HACS → ⋮ menu → **Custom repositories** → add
+   `https://github.com/SimoneAvogadro/zha-sonoff-quirks` with category
    **Integration**.
-2. Cerca *ZHA Sonoff Quirks*, **Download**.
-3. **Riavvia Home Assistant.**
-4. `Impostazioni → Dispositivi e servizi → Aggiungi integrazione → ZHA Sonoff
-   Quirks` → Invia. Non c'è nulla da configurare: l'integrazione serve solo a
-   far importare la quirk all'avvio.
-5. Prosegui con il **Reconfigure** del dispositivo (vedi sotto).
+2. Search for *ZHA Sonoff Quirks*, then **Download**.
+3. **Restart Home Assistant.**
+4. `Settings → Devices & services → Add integration → ZHA Sonoff Quirks` →
+   Submit. There is nothing to configure: the integration exists only to make
+   the quirk get imported at startup.
+5. Continue with the device **Reconfigure** (see below).
 
-### Manuale
+### Manual
 
-1. Copia `custom_components/zha_sonoff_quirks/quirks/sonoff_swv_zf2.py` in una
-   cartella del tuo Home Assistant, per esempio `/config/custom_zha_quirks/`.
+1. Copy `custom_components/zha_sonoff_quirks/quirks/sonoff_swv_zf2.py` into a
+   folder on your Home Assistant, e.g. `/config/custom_zha_quirks/`.
 
-2. Punta ZHA a quella cartella in `configuration.yaml`:
+2. Point ZHA at that folder in `configuration.yaml`:
 
    ```yaml
    zha:
      custom_quirks_path: /config/custom_zha_quirks/
    ```
 
-3. **Riavvia Home Assistant** (non basta il reload di ZHA: le quirk vengono
-   caricate all'avvio).
+3. **Restart Home Assistant** — reloading ZHA is not enough, quirks are loaded
+   at startup.
 
-### Reconfigure (obbligatorio, in entrambi i casi)
+### Reconfigure (required either way)
 
-Nel device SWV-ZF2 in ZHA premi **Reconfigure**. La valvola è un device sleepy:
-**svegliala prima** (premi il pulsante fisico) e tienila sveglia finché il
-reconfigure non termina, altrimenti binding e reporting non vengono applicati e
-le entità restano `unknown`.
+On the SWV-ZF2 device page in ZHA, press **Reconfigure**. The valve is a sleepy
+battery device: **wake it first** (press the physical button) and keep it awake
+until the reconfigure finishes, otherwise binding and reporting are never
+applied and the entities stay `unknown`.
 
-Verifica poi in `Impostazioni → Dispositivi → SWV-ZF2` che compaiano le entità
-`number`/`select` di configurazione.
+Then check under `Settings → Devices → SWV-ZF2` that the configuration
+`number` / `select` entities have appeared.
 
-### Verificare che la quirk sia attiva
+### Checking that the quirk is active
 
-Nella pagina del dispositivo, *Zigbee info* deve riportare la quirk applicata
-come `sonoff_swv_zf2`. In alternativa, nei log:
+On the device page, *Zigbee info* should report the applied quirk as
+`sonoff_swv_zf2`. Alternatively, in the logs:
 
 ```yaml
 logger:
@@ -93,22 +92,22 @@ logger:
     zhaquirks: debug
 ```
 
-## Uso: irrigazione autonoma
+## Usage: autonomous irrigation
 
-Il modello d'uso è **configura → accendi**:
+The model is **configure → turn on**:
 
-1. imposta `Irrigation mode` su `duration` (a tempo) o `capacity` (a volume);
-2. imposta `Irrigation duration` (minuti) oppure `Irrigation volume` (litri);
-3. imposta `Fail-safe timeout` come rete di sicurezza;
-4. accendi lo switch del canale che vuoi irrigare.
+1. set `Irrigation mode` to `duration` (timed) or `capacity` (by volume);
+2. set `Irrigation duration` (minutes) or `Irrigation volume` (litres);
+3. set `Fail-safe timeout` as a safety net;
+4. turn on the switch for the channel you want to irrigate.
 
-La valvola chiude autonomamente al raggiungimento della soglia. Non serve
-un'automazione di spegnimento e il ciclo completa anche con HA spento.
+The valve closes on its own once the target is reached. No shutdown automation
+is needed, and the cycle completes even with Home Assistant powered off.
 
-Esempio di script:
+Example script:
 
 ```yaml
-irriga_orto_250_litri:
+irrigate_garden_250_litres:
   sequence:
     - target: {entity_id: select.swv_zf2_irrigation_mode}
       action: select.select_option
@@ -123,21 +122,21 @@ irriga_orto_250_litri:
       action: switch.turn_on
 ```
 
-> `zha.set_zigbee_cluster_attribute` **non** funziona su `0x501D`: è un array ZCL
-> e il servizio non lo gestisce. Usa le entità esposte dalla quirk, che passano
-> per il write path raw implementato nel cluster.
+> `zha.set_zigbee_cluster_attribute` **does not work** on `0x501D`: it is a ZCL
+> array and the service cannot handle it. Use the entities exposed by the quirk,
+> which go through the raw write path implemented in the cluster.
 
-### Mappatura canali
+### Channel mapping
 
-`endpoint 1 → switch`, `endpoint 2 → switch_2`. La corrispondenza con le linee
-A/B stampate sul corpo della valvola **non è ancora confermata**: verificala a
-orecchio (click del motorino) prima di affidarci un'automazione.
+`endpoint 1 → switch`, `endpoint 2 → switch_2`. Which one corresponds to the
+A/B lines printed on the valve body is **not yet confirmed**: check it by ear
+(listen for the motor click) before trusting it in an automation.
 
-Poiché la configurazione è condivisa, per irrigare i due canali con parametri
-diversi devi **serializzare**: configura, apri CH1, attendi la chiusura,
-riconfigura, apri CH2.
+Because the configuration is shared, irrigating the two channels with different
+parameters means **serialising**: configure, open CH1, wait for it to close,
+reconfigure, open CH2.
 
-## Sviluppo
+## Development
 
 ```bash
 uv venv --python 3.13 .venv
@@ -150,43 +149,43 @@ Layout:
 
 ```
 custom_components/zha_sonoff_quirks/
-  __init__.py        # importa quirks/ all'avvio -> registrazione nel registry
-  config_flow.py     # flow a un click, nessuna opzione
+  __init__.py        # imports quirks/ at startup -> registration in the registry
+  config_flow.py     # one-click flow, no options
   quirks/
-    sonoff_swv_zf2.py  # LA quirk (unica copia; integrità in checksums.sha256)
-tests/               # 39 test offline, nessun dispositivo richiesto
+    sonoff_swv_zf2.py  # THE quirk (single copy; integrity in checksums.sha256)
+tests/               # 57 offline tests, no device required
 ```
 
-La quirk è volutamente **self-contained**: non importa nulla
-dall'integrazione, così funziona identica sia caricata da HACS sia droppata in
+The quirk is deliberately **self-contained**: it imports nothing from the
+integration, so it behaves identically whether loaded via HACS or dropped into
 `custom_quirks_path`.
 
-I test girano interamente offline con un `ControllerApplication` finto: nessuna
-IO di rete, nessun dispositivo richiesto.
+The tests run entirely offline against a fake `ControllerApplication`: no
+network I/O, no device needed. The byte layouts are exercised against payloads
+captured verbatim from a real valve.
 
-## Stato e limiti noti
+## Status and known limits
 
-Vedi [TODO.md](TODO.md).
+See [TODO.md](TODO.md).
 
-**Verificato sul dispositivo** (fw `0x00001007`): la configurazione è globale, e
-l'auto-chiusura in modalità `capacity` funziona **su entrambi i canali** — la
-valvola chiude al raggiungimento del volume, ben prima del fail-safe.
+**Verified on the device** (fw `0x00001007`): the configuration is global, and
+autonomous closing in `capacity` mode works **on both channels** — the valve
+closes when the volume target is reached, well before the fail-safe.
 
-**Non ancora verificato**: la modalità `duration` in quanto auto-chiusura
-cronometrata (il feed `0x501F` la riporta correttamente, ma il tempo di chiusura
-effettivo non è stato misurato).
+**Not yet verified**: `duration` mode as a timed auto-close. The `0x501F` feed
+reports it correctly, but the actual closing time has not been measured.
 
-I sensori di consumo sono stati spostati da `0x501B`/`0x501C` a `0x5006`/`0x5007`:
-i primi rifiutano la `configure_reporting` e restavano `unknown` per sempre.
-Dettagli in [TESTS.md](TESTS.md).
+The usage sensors were moved from `0x501B`/`0x501C` to `0x5006`/`0x5007`: the
+former reject `configure_reporting` and left the entities `unknown` forever.
+Details in [TESTS.md](TESTS.md).
 
-### Aggiornamento da 0.1.0
+### Upgrading from 0.1.0
 
-Le entità di configurazione hanno perso il suffisso di canale, quindi cambiano
-`unique_id` ed `entity_id`. Dopo l'aggiornamento: elimina dal registro le vecchie
-`*_ch1` e `*_ch2` rimaste orfane e aggiorna eventuali automazioni o script che le
-referenziavano.
+The configuration entities lost their channel suffix, so their `unique_id` and
+`entity_id` changed. After upgrading: delete the orphaned `*_ch1` and `*_ch2`
+entities from the registry, and update any automation or script that referenced
+them.
 
-## Licenza
+## License
 
-Apache-2.0, come `zha-device-handlers`.
+Apache-2.0, same as `zha-device-handlers`.
