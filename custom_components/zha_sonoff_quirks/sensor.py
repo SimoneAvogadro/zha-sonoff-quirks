@@ -1,9 +1,16 @@
 """Irrigation history sensors, one pair per SWV channel switch.
 
-Two entities per channel, both attached to the valve's ZHA device by reusing
-its identifiers/connections (the device-merge trick: passing the same
-identifiers makes HA attach our entities to the existing device instead of
-creating a new one):
+Two entities per channel, both attached to the valve's ZHA device. NOT via
+DeviceInfo with the ZHA device's identifiers: on current HA that no longer
+merges — each config entry claiming a foreign identifier gets its own
+duplicate "shadow" device (observed live on 2026-08-10, and visible in
+tuya_irrigation's recent sensors too). Instead the entities register with no
+device at all and hook themselves onto the ZHA device via
+``entity_registry.async_update_entity(..., device_id=...)`` on add, which is
+the association HA actually reads. A cleanup pass removes any empty shadow
+devices a previous version created.
+
+The entities:
 
 * ``Irrigation history CH<n>`` — state is the timestamp of the last completed
   run; its ``runs`` attribute carries the recent run list the card reads. The
@@ -21,6 +28,7 @@ regardless of how the switch entity_id is spelled.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 
 from homeassistant.components.sensor import (
@@ -33,7 +41,6 @@ from homeassistant.const import UnitOfVolume
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
@@ -80,6 +87,28 @@ async def async_setup_entry(
 
     _add_new_channels()
 
+    async def _cleanup_shadow_devices() -> None:
+        """Remove empty duplicate devices left by the 0.5.0 DeviceInfo claim.
+
+        Deferred a few seconds so the entities added above have re-hooked
+        themselves onto the real ZHA device first, leaving the shadow devices
+        entity-less and safe to delete.
+        """
+        await asyncio.sleep(10)
+        ent_reg = er.async_get(hass)
+        for device in list(dev_reg.devices.values()):
+            if entry.entry_id not in device.config_entries:
+                continue
+            if len(device.config_entries) > 1:
+                continue
+            if er.async_entries_for_device(
+                ent_reg, device.id, include_disabled_entities=True
+            ):
+                continue
+            dev_reg.async_remove_device(device.id)
+
+    entry.async_create_task(hass, _cleanup_shadow_devices())
+
     @callback
     def _registry_updated(event: Event) -> None:
         # A valve paired (or re-quirked via ZHA reload) after setup registers
@@ -111,17 +140,22 @@ class _SwvHistoryEntity(SensorEntity):
         channel: str,
         run_log: SwvRunLog,
     ) -> None:
-        """Attach to the valve's ZHA device and remember the switch/channel."""
+        """Remember the target ZHA device and the switch/channel pair."""
         self._switch_entity = switch_entity
         self._channel = channel
         self._run_log = run_log
-        self._attr_device_info = DeviceInfo(
-            identifiers=device.identifiers,
-            connections=device.connections,
-        )
+        # Deliberately NO _attr_device_info (see module docstring): the
+        # registry hook in async_added_to_hass does the device association.
+        self._target_device_id = device.id
 
     async def async_added_to_hass(self) -> None:
-        """Subscribe to the run log's per-switch refresh signal."""
+        """Attach to the ZHA device and subscribe to the refresh signal."""
+        ent_reg = er.async_get(self.hass)
+        reg_entry = ent_reg.async_get(self.entity_id)
+        if reg_entry is not None and reg_entry.device_id != self._target_device_id:
+            ent_reg.async_update_entity(
+                self.entity_id, device_id=self._target_device_id
+            )
         self.async_on_remove(
             async_dispatcher_connect(
                 self.hass,
