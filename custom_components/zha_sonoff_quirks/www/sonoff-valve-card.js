@@ -2,6 +2,11 @@
  * Sonoff Valve Card (Irrigation) for Home Assistant
  * Custom Lovelace card for the SONOFF SWV-ZF2 dual-channel Zigbee water valve,
  * paired with the zha_sonoff_quirks integration (quirk + irrigation services).
+ * v0.5.2 — Idle row aligned with the Tuya irrigation card: label shortened to
+ *          "Ultima" (fits a large mobile font on one line) and the value is
+ *          now the start time of the last run, taken from the run log, with
+ *          the same smart-date wording. The session_* totals remain the
+ *          fallback when no history entity is available.
  * v0.5.1 — Run history: expandable list of past irrigations fed by the
  *          integration's per-channel history sensors (runs attribute), merged
  *          across the two channels. History entities resolve lazily at
@@ -35,7 +40,8 @@ const I18N = {
     stopping: "Arresto…", stopFailed: "Arresto fallito",
     liters: "Litri", time: "Tempo", remaining: "rimanente",
     line1: "Linea 1", line2: "Linea 2",
-    lastSession: "Ultima sessione", duration: "Durata", none: "nessuna",
+    last: "Ultima", duration: "Durata", none: "nessuna",
+    atSep: " alle ", today: "oggi",
     history: "Storico irrigazioni",
     configError: "Seleziona una valvola Sonoff nella configurazione",
     defaultName: "Irrigazione",
@@ -57,7 +63,8 @@ const I18N = {
     stopping: "Stopping…", stopFailed: "Stop failed",
     liters: "Liters", time: "Time", remaining: "remaining",
     line1: "Line 1", line2: "Line 2",
-    lastSession: "Last session", duration: "Duration", none: "none",
+    last: "Last", duration: "Duration", none: "none",
+    atSep: " at ", today: "today",
     history: "Irrigation history",
     configError: "Select a Sonoff valve in the configuration",
     defaultName: "Irrigation",
@@ -79,7 +86,8 @@ const I18N = {
     stopping: "停止中…", stopFailed: "停止失败",
     liters: "升量", time: "时长", remaining: "剩余",
     line1: "线路 1", line2: "线路 2",
-    lastSession: "上次灌溉", duration: "持续时间", none: "无",
+    last: "上次", duration: "持续时间", none: "无",
+    atSep: " ", today: "今天",
     history: "灌溉历史",
     configError: "请在配置中选择 Sonoff 水阀",
     defaultName: "灌溉",
@@ -810,9 +818,22 @@ class SonoffValveCard extends HTMLElement {
       + `</div>`;
   }
 
-  // Idle summary: the session sensors keep the last run's totals (device
-  // truth), so when nothing is running we show them as "last session".
+  // Idle summary. Preferred source is the server-side run log, because it is
+  // the only one that knows WHEN the run happened: the session_* sensors hold
+  // the last run's totals (device truth) but carry no clock, so with them
+  // alone the row can only say how long it lasted. Fall back to those totals
+  // when the history entities are missing (integration < 0.5.0, or a valve
+  // whose history sensors haven't resolved yet).
   _lastSession() {
+    const rec = this._historyRuns()[0];
+    if (rec) {
+      const st = rec.start ? new Date(rec.start) : null;
+      return {
+        when: st && !isNaN(st.getTime()) ? st : null,
+        vol: rec.liters === null || rec.liters === undefined ? null : rec.liters,
+        dur: rec.duration_s || 0,
+      };
+    }
     const vs = this._sv(this._entities.session_volume);
     const ds = this._sv(this._entities.session_elapsed);
     const v = BAD_STATES.includes(vs) ? NaN : parseFloat(vs);
@@ -820,7 +841,7 @@ class SonoffValveCard extends HTMLElement {
     const hasV = isFinite(v) && v > 0;
     const hasD = isFinite(d) && d > 0;
     if (!hasV && !hasD) return null;
-    return { vol: hasV ? v : 0, dur: hasD ? d : 0 };
+    return { when: null, vol: hasV ? v : 0, dur: hasD ? d : 0 };
   }
 
   // ── Formatters ──
@@ -830,6 +851,34 @@ class SonoffValveCard extends HTMLElement {
     return n.toLocaleString(_numLocale(this._hass), { minimumFractionDigits: 0, maximumFractionDigits: 1 });
   }
   _p2(n) { return String(Math.round(n)).padStart(2, "0"); }
+  // Smart absolute date for the compact "last" line — same formatter (and
+  // same wording) as the Tuya irrigation card, so the two cards read alike
+  // when stacked in one view:
+  //   today            → "oggi 10:35"
+  //   this week        → "Martedì 12 alle 10:35"
+  //   older, same year → "12 mar"
+  //   previous years   → "12 mar 2024"
+  _smartDate(date) {
+    if (!date || isNaN(date.getTime())) return null;
+    const now = new Date();
+    const locale = this._hass?.language || _i18nLang(this._hass);
+    const cap = (s) => (s ? s.charAt(0).toLocaleUpperCase(locale) + s.slice(1) : s);
+    const time = date.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+    const sameDay =
+      date.getFullYear() === now.getFullYear() &&
+      date.getMonth() === now.getMonth() &&
+      date.getDate() === now.getDate();
+    if (sameDay) return `${_t(this._hass, "today")} ${time}`;
+    const diffDays = (now.getTime() - date.getTime()) / 86400000;
+    if (diffDays >= 0 && diffDays < 7) {
+      const wd = cap(date.toLocaleDateString(locale, { weekday: "long" }));
+      return `${wd} ${date.getDate()}${_t(this._hass, "atSep")}${time}`;
+    }
+    if (date.getFullYear() === now.getFullYear()) {
+      return cap(date.toLocaleDateString(locale, { day: "numeric", month: "short" }));
+    }
+    return cap(date.toLocaleDateString(locale, { day: "numeric", month: "short", year: "numeric" }));
+  }
   // h:mm:ss above one hour: duration runs go up to 719 minutes, and a raw
   // "719:00" reads as broken formatting rather than minutes:seconds.
   _mmss(sec) {
@@ -968,7 +1017,7 @@ input[type=number]{-moz-appearance:textfield}
     <div class="dv" id="divider"></div>
     <div class="sc" style="margin-bottom:0">
       <div class="hist-compact" id="last-row">
-        <span class="hist-compact-label">${t("lastSession")}</span>
+        <span class="hist-compact-label">${t("last")}</span>
         <span class="hist-when" id="ls-when"></span>
         <span class="hist-vol" id="ls-vol" style="display:none"><span class="hist-vol-label">${t("liters")}:</span> <span id="ls-vol-val"></span></span>
         <button class="hist-toggle" id="hist-toggle" title="${t("history")}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
@@ -1123,10 +1172,13 @@ input[type=number]{-moz-appearance:textfield}
     if (el.lastRow) el.lastRow.style.display = showRow ? "flex" : "none";
     if (showRow) {
       if (ls) {
-        this._txt(el.lsWhen, `${t("duration")}: ${this._fd(ls.dur)}`);
+        // Start time when the run log knows it, duration otherwise.
+        const when = this._smartDate(ls.when);
+        this._txt(el.lsWhen, when || `${t("duration")}: ${this._fd(ls.dur)}`);
         this._cls(el.lsWhen, "none", false);
-        if (el.lsVol) el.lsVol.style.display = "inline";
-        this._txt(el.lsVolVal, this._fmtVolShortNum(ls.vol));
+        const hasVol = ls.vol !== null && ls.vol !== undefined;
+        if (el.lsVol) el.lsVol.style.display = hasVol ? "inline" : "none";
+        if (hasVol) this._txt(el.lsVolVal, this._fmtVolShortNum(ls.vol));
       } else {
         this._txt(el.lsWhen, ": " + t("none"));
         this._cls(el.lsWhen, "none", true);
@@ -1188,4 +1240,4 @@ window.customCards = window.customCards || [];
   const pickerDesc = (I18N[lang] || I18N.en).cardDesc;
   window.customCards.push({ type: "sonoff-valve-card", name: pickerName, description: pickerDesc, preview: true });
 })();
-console.info("%c SONOFF-VALVE-CARD %c v0.5.1 ", "color:white;background:#2ecc8b;font-weight:bold;padding:2px 6px;border-radius:4px 0 0 4px;", "color:#2ecc8b;background:#1a1c2e;font-weight:bold;padding:2px 6px;border-radius:0 4px 4px 0;");
+console.info("%c SONOFF-VALVE-CARD %c v0.5.2 ", "color:white;background:#2ecc8b;font-weight:bold;padding:2px 6px;border-radius:4px 0 0 4px;", "color:#2ecc8b;background:#1a1c2e;font-weight:bold;padding:2px 6px;border-radius:0 4px 4px 0;");
