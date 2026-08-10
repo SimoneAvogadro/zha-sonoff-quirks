@@ -32,8 +32,10 @@ comunque ripetuto e coerente su quattro cicli e due canali.
 
 ### Residuo
 
-- **Modalità `duration` non ancora provata.** È il percorso citato dal bench di
-  riferimento (ZFU: 15 min → 15:01.9) e resta da confermare su questo esemplare.
+- ~~Modalità `duration` non ancora provata~~ — **verificata il 2026-08-10**:
+  corsa da 1 min su CH1 avviata via `irrigation_by_minutes`, auto-chiusura
+  on-device dopo 62 s (8 L erogati), registrata dal run log 0.5.x come
+  `completed`.
 - ~~`sensor.water_usage_volume` non riporta mai~~ — **risolto in 0.3.0**: il
   dispositivo rifiuta la `configure_reporting` su `0x501B`/`0x501C`
   (`UNSUPPORTED_ATTRIBUTE`). I sensori usano ora `0x5006`/`0x5007`, che il
