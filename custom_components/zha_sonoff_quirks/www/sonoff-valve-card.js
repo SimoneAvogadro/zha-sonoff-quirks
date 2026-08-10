@@ -2,6 +2,11 @@
  * Sonoff Valve Card (Irrigation) for Home Assistant
  * Custom Lovelace card for the SONOFF SWV-ZF2 dual-channel Zigbee water valve,
  * paired with the zha_sonoff_quirks integration (quirk + irrigation services).
+ * v0.5.0 — Run history: expandable list of past irrigations fed by the
+ *          integration's per-channel history sensors (runs attribute), merged
+ *          across the two channels. History entities resolve lazily at
+ *          runtime too, so configs saved with 0.4.0 pick them up without
+ *          reopening the editor.
  * v0.4.0 — Initial release. Visual language and interaction patterns are shared
  *          with the Tuya irrigation card (tuya-cards-for-ha):
  *          - build DOM once, patch values in place (no innerHTML on hass push);
@@ -31,6 +36,7 @@ const I18N = {
     liters: "Litri", time: "Tempo", remaining: "rimanente",
     line1: "Linea 1", line2: "Linea 2",
     lastSession: "Ultima sessione", duration: "Durata", none: "nessuna",
+    history: "Storico irrigazioni",
     configError: "Seleziona una valvola Sonoff nella configurazione",
     defaultName: "Irrigazione",
     integrationMissing: "Installa l'integrazione ZHA Sonoff Quirks per abilitare il controllo",
@@ -52,6 +58,7 @@ const I18N = {
     liters: "Liters", time: "Time", remaining: "remaining",
     line1: "Line 1", line2: "Line 2",
     lastSession: "Last session", duration: "Duration", none: "none",
+    history: "Irrigation history",
     configError: "Select a Sonoff valve in the configuration",
     defaultName: "Irrigation",
     integrationMissing: "Install the ZHA Sonoff Quirks integration to enable control",
@@ -73,6 +80,7 @@ const I18N = {
     liters: "升量", time: "时长", remaining: "剩余",
     line1: "线路 1", line2: "线路 2",
     lastSession: "上次灌溉", duration: "持续时间", none: "无",
+    history: "灌溉历史",
     configError: "请在配置中选择 Sonoff 水阀",
     defaultName: "灌溉",
     integrationMissing: "请安装 ZHA Sonoff Quirks 集成以启用控制",
@@ -98,7 +106,11 @@ function _numLocale(hass) { const l = hass?.language; return l || "en"; }
 const COMPAT_MODELS = ["SWV-ZF2", "SWV-ZF2U", "SWV-ZF2E"];
 // Every key the editor tries to resolve (battery is optional, resolved separately).
 const ENTITY_KEYS = ["mode", "duration", "volume", "fail_safe", "irrigating",
-  "session_volume", "session_elapsed", "session_target", "switch_1", "switch_2"];
+  "session_volume", "session_elapsed", "session_target", "switch_1", "switch_2",
+  "history_1", "history_2"];
+// Optional keys: resolved when present but never worth a warning banner — the
+// history sensors only exist from integration 0.5.0 on.
+const OPTIONAL_KEYS = ["history_1", "history_2"];
 // Keys the card runtime actually reads — missing ones are surfaced in the config banner.
 const RUNTIME_KEYS = ["mode", "duration", "volume", "session_volume",
   "session_elapsed", "session_target", "switch_1", "switch_2"];
@@ -115,6 +127,13 @@ const UID_RULES = [
   ["session_elapsed", "sensor",        "-1-session_elapsed"],
   ["session_target",  "sensor",        "-1-session_target_duration"],
 ];
+// The integration's own history sensors embed the channel FIRST in their
+// unique_id ("zha_sonoff_quirks_history_ch1_<switch entity_id>"), so they are
+// matched by PREFIX, unlike the quirk entities above.
+const UID_PREFIX_RULES = [
+  ["history_1", "sensor", "zha_sonoff_quirks_history_ch1"],
+  ["history_2", "sensor", "zha_sonoff_quirks_history_ch2"],
+];
 // entity_id-suffix fallback used only when the registry WS API is unavailable.
 const EID_RULES = [
   ["mode",            "select.",        "_irrigation_mode"],
@@ -125,6 +144,8 @@ const EID_RULES = [
   ["session_volume",  "sensor.",        "_session_volume"],
   ["session_elapsed", "sensor.",        "_session_elapsed"],
   ["session_target",  "sensor.",        "_session_target_duration"],
+  ["history_1",       "sensor.",        "_irrigation_history_ch1"],
+  ["history_2",       "sensor.",        "_irrigation_history_ch2"],
 ];
 const ICON_PLAY = `<svg width="18" height="18" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="white"/></svg>`;
 const ICON_STOP = `<svg width="16" height="16" viewBox="0 0 24 24" fill="white"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>`;
@@ -295,7 +316,9 @@ select:focus,input:focus{border-color:#4a90d9}
         if (states[eid]?.attributes?.device_class === "battery") { found.battery = eid; break; }
       }
     }
-    const unresolved = ENTITY_KEYS.filter((k) => !found[k]);
+    const unresolved = ENTITY_KEYS.filter(
+      (k) => !found[k] && !OPTIONAL_KEYS.includes(k)
+    );
     const t = (k) => _t(this._hass, k);
     let warn = "";
     if (wsFailed) warn += t("editorResolveFail");
@@ -313,6 +336,13 @@ select:focus,input:focus{border-color:#4a90d9}
         if (!c.entity_id.startsWith(domain + ".")) continue;
         const uid = uids[c.entity_id];
         if (uid && uid.endsWith(suffix)) { found[key] = c.entity_id; break; }
+      }
+    }
+    for (const [key, domain, prefix] of UID_PREFIX_RULES) {
+      for (const c of cands) {
+        if (!c.entity_id.startsWith(domain + ".")) continue;
+        const uid = uids[c.entity_id];
+        if (uid && uid.startsWith(prefix)) { found[key] = c.entity_id; break; }
       }
     }
     // Switch unique_ids are "<ieee>-<ep>" or "<ieee>-<ep>-6" depending on the
@@ -429,6 +459,10 @@ class SonoffValveCard extends HTMLElement {
     this._pending = null; this._pendingTimer = null; this._pendingHold = null;
     this._inputLitri = 10; this._inputMin = 5;
     this._userEditedLitri = false; this._userEditedTempo = false;
+    // Run-history state: panel open flag, render key (skip innerHTML churn on
+    // every hass push), throttle stamp for the lazy entity resolution.
+    this._histOpen = false; this._histKey = ""; this._histResolveAt = 0;
+    this._histWsTried = false;
     this._cfgProblems = []; this._cfgFatal = true;
     this._domCreated = false;
     this._el = {};
@@ -486,7 +520,59 @@ class SonoffValveCard extends HTMLElement {
       // transient unknown/stale value can't disturb the inputs.
       if (!this._pending) this._syncFromEntities();
     }
+    this._lazyResolveHistory();
     this._render();
+  }
+
+  // Configs saved with card/integration 0.4.0 have no history entities. Fill
+  // them in at runtime so the history list appears without the user reopening
+  // the editor. Two passes: the cheap entity_id-suffix scan first, then (if
+  // that finds nothing, e.g. renamed entity_ids) a one-shot registry lookup
+  // over WebSocket by unique_id prefix — the same authority the editor uses.
+  // Retried at most once a minute until both channels resolve (the sensors
+  // may be created only after the integration updates).
+  _lazyResolveHistory() {
+    if (!this._deviceId || !this._entities) return;
+    if (this._entities.history_1 && this._entities.history_2) return;
+    const now = Date.now();
+    if (now - this._histResolveAt < 60000) return;
+    this._histResolveAt = now;
+    const ents = { ...this._entities };
+    let changed = false;
+    for (const [eid, ent] of Object.entries(this._hass?.entities || {})) {
+      if (ent?.device_id !== this._deviceId || !eid.startsWith("sensor.")) continue;
+      if (!ents.history_1 && eid.endsWith("_irrigation_history_ch1")) {
+        ents.history_1 = eid; changed = true;
+      } else if (!ents.history_2 && eid.endsWith("_irrigation_history_ch2")) {
+        ents.history_2 = eid; changed = true;
+      }
+    }
+    if (changed) this._entities = ents;
+    else if (!this._entities.history_1 && !this._entities.history_2) {
+      this._lazyResolveHistoryWS().catch(() => { /* stay on the suffix path */ });
+    }
+  }
+
+  async _lazyResolveHistoryWS() {
+    if (this._histWsTried || typeof this._hass?.callWS !== "function") return;
+    this._histWsTried = true;
+    const all = await this._hass.callWS({ type: "config/entity_registry/list" });
+    const cands = (all || []).filter((e) =>
+      e.device_id === this._deviceId && e.entity_id.startsWith("sensor."));
+    const ents = { ...this._entities };
+    let changed = false;
+    for (const c of cands) {
+      if (ents.history_1 && ents.history_2) break;
+      let uid = "";
+      try {
+        const full = await this._hass.callWS({ type: "config/entity_registry/get", entity_id: c.entity_id });
+        uid = String(full?.unique_id || "").toLowerCase();
+      } catch (_) { continue; }
+      for (const [key, , prefix] of UID_PREFIX_RULES) {
+        if (!ents[key] && uid.startsWith(prefix)) { ents[key] = c.entity_id; changed = true; break; }
+      }
+    }
+    if (changed) { this._entities = ents; this._render(); }
   }
 
   // The duration/volume number entities are separate device attrs (minutes /
@@ -689,9 +775,43 @@ class SonoffValveCard extends HTMLElement {
     return none;
   }
 
+  // Merged run history from the integration's per-channel history sensors
+  // (each carries a `runs` attribute, most recent first). The device itself
+  // has no run log — this is the server-side record kept by zha_sonoff_quirks.
+  _historyRuns() {
+    const out = [];
+    for (const [key, ch] of [["history_1", "1"], ["history_2", "2"]]) {
+      const st = this._hass?.states[this._entities[key]];
+      const runs = st?.attributes?.runs;
+      if (!Array.isArray(runs)) continue;
+      for (const r of runs) {
+        if (r && r.end) out.push({ ...r, _ch: ch });
+      }
+    }
+    out.sort((a, b) => new Date(b.end) - new Date(a.end));
+    return out.slice(0, 8);
+  }
+
+  _histRowHtml(r) {
+    const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    const loc = _numLocale(this._hass);
+    const d = new Date(r.end);
+    const when = isNaN(d.getTime()) ? "—"
+      : d.toLocaleDateString(loc, { day: "2-digit", month: "2-digit" })
+        + " " + d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });
+    const liters = (r.liters === null || r.liters === undefined) ? "—"
+      : `${this._fmtVolShortNum(r.liters)} L`;
+    return `<div class="hr-row">`
+      + `<span class="hr-when">${esc(when)}</span>`
+      + `<span class="hr-ch">${esc(this._chName(r._ch))}</span>`
+      + `<span class="hr-dur">${esc(this._fd(r.duration_s || 0))}</span>`
+      + `<span class="hr-l">${esc(liters)}</span>`
+      + `</div>`;
+  }
+
   // Idle summary: the session sensors keep the last run's totals (device
-  // truth), so when nothing is running we show them as "last session". There
-  // is no run-log on this device, so no history list.
+  // truth), so when nothing is running we show them as "last session".
   _lastSession() {
     const vs = this._sv(this._entities.session_volume);
     const ds = this._sv(this._entities.session_elapsed);
@@ -778,6 +898,16 @@ ha-card{overflow:hidden}
 .hist-when.none{color:var(--ts);font-weight:400;font-style:italic}
 .hist-vol{font-size:12px;color:var(--tm);font-weight:500;white-space:nowrap;flex-shrink:0}
 .hist-vol-label{color:var(--th);font-weight:400}
+.hist-toggle{background:none;border:none;color:var(--th);cursor:pointer;padding:2px 4px;flex-shrink:0;display:none;line-height:0;transition:transform .2s}
+.hist-toggle.open{transform:rotate(90deg)}
+.hist-toggle svg{display:block}
+.hist-list{margin-top:6px;border-top:1px solid var(--bd);padding-top:6px;display:none;flex-direction:column;gap:4px}
+.hist-list.vi{display:flex}
+.hr-row{display:flex;align-items:center;gap:10px;font-size:11px;color:var(--ts);font-family:monospace}
+.hr-when{color:var(--tm);flex-shrink:0}
+.hr-ch{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:90px}
+.hr-dur{margin-left:auto;flex-shrink:0}
+.hr-l{color:var(--tm);min-width:48px;text-align:right;flex-shrink:0}
 input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 input[type=number]{-moz-appearance:textfield}
 .intg-missing{background:rgba(226,85,85,.12);color:var(--danger);border:1px solid rgba(226,85,85,.3);border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:12px;text-align:center;display:none}
@@ -841,7 +971,9 @@ input[type=number]{-moz-appearance:textfield}
         <span class="hist-compact-label">${t("lastSession")}</span>
         <span class="hist-when" id="ls-when"></span>
         <span class="hist-vol" id="ls-vol" style="display:none"><span class="hist-vol-label">${t("liters")}:</span> <span id="ls-vol-val"></span></span>
+        <button class="hist-toggle" id="hist-toggle" title="${t("history")}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
       </div>
+      <div class="hist-list" id="hist-list"></div>
     </div>
   </div>
 </ha-card>`;
@@ -869,6 +1001,7 @@ input[type=number]{-moz-appearance:textfield}
       startOv: $("start-ov"), startOvTxt: $("start-ov-txt"),
       divider: $("divider"),
       lastRow: $("last-row"), lsWhen: $("ls-when"), lsVol: $("ls-vol"), lsVolVal: $("ls-vol-val"),
+      histToggle: $("hist-toggle"), histList: $("hist-list"),
     };
   }
 
@@ -887,6 +1020,10 @@ input[type=number]{-moz-appearance:textfield}
     el.tmin?.addEventListener("change", (ev) => {
       this._inputMin = Math.max(1, Math.min(719, parseInt(ev.target.value) || 1));
       this._userEditedTempo = true;
+    });
+    el.histToggle?.addEventListener("click", () => {
+      this._histOpen = !this._histOpen;
+      this._render();
     });
   }
 
@@ -996,6 +1133,23 @@ input[type=number]{-moz-appearance:textfield}
         if (el.lsVol) el.lsVol.style.display = "none";
       }
     }
+
+    // ── Run history (expandable list behind the chevron on the idle row) ──
+    const runs = (fatal || isOn) ? [] : this._historyRuns();
+    const hasHist = runs.length > 0;
+    if (el.histToggle) el.histToggle.style.display = hasHist ? "block" : "none";
+    const histOpen = hasHist && this._histOpen;
+    this._cls(el.histToggle, "open", histOpen);
+    this._cls(el.histList, "vi", histOpen);
+    if (histOpen && el.histList) {
+      // Rebuild the rows only when the underlying data actually changed —
+      // innerHTML churn on every hass push would be wasted work.
+      const key = runs.map((r) => r.end + r._ch).join("|");
+      if (key !== this._histKey) {
+        this._histKey = key;
+        el.histList.innerHTML = runs.map((r) => this._histRowHtml(r)).join("");
+      }
+    }
   }
 
   disconnectedCallback() {
@@ -1034,4 +1188,4 @@ window.customCards = window.customCards || [];
   const pickerDesc = (I18N[lang] || I18N.en).cardDesc;
   window.customCards.push({ type: "sonoff-valve-card", name: pickerName, description: pickerDesc, preview: true });
 })();
-console.info("%c SONOFF-VALVE-CARD %c v0.4.0 ", "color:white;background:#2ecc8b;font-weight:bold;padding:2px 6px;border-radius:4px 0 0 4px;", "color:#2ecc8b;background:#1a1c2e;font-weight:bold;padding:2px 6px;border-radius:0 4px 4px 0;");
+console.info("%c SONOFF-VALVE-CARD %c v0.5.0 ", "color:white;background:#2ecc8b;font-weight:bold;padding:2px 6px;border-radius:4px 0 0 4px;", "color:#2ecc8b;background:#1a1c2e;font-weight:bold;padding:2px 6px;border-radius:0 4px 4px 0;");

@@ -24,6 +24,8 @@ on, and **the valve closes by itself** — even if Home Assistant is offline.
 | Irrigation duration | number (0–719 min) | 1 | `0x501D` bytes 1–2 |
 | Irrigation volume | number (0–10000 L) | 1 | `0x501D` bytes 8–9 |
 | Fail-safe timeout | number (0–719 min) | 1 | `0x501D` bytes 10–11 |
+| Irrigation history CH1 / CH2 | sensor (timestamp + `runs` attribute) | — | run log (integration) |
+| Irrigation water total CH1 / CH2 | sensor (litres, `total_increasing`) | — | run log (integration) |
 
 > **The configuration is global, not per channel.** `0x501D` only exists on
 > endpoint 1 — verified on the device, see [TODO.md](TODO.md) #2. The four
@@ -35,6 +37,25 @@ The four session entities come from `0x501F`, which the device reports
 spontaneously **every ~6 seconds while it is running**: that is the source for a
 real-time progress bar. The attribute layout and the rest of the reverse
 engineering are documented in [TESTS.md](TESTS.md).
+
+The two history entity pairs (0.5.0+) are **not** device attributes: the valve
+keeps no run log, so the integration records one server-side. Every run — no
+matter how it started: the services below, an automation, a bare
+`switch.turn_on`, the physical button, the firmware's own auto-close — is
+observed on the channel switches and persisted (last 50 per channel) in
+`.storage/zha_sonoff_quirks_history`, surviving restarts. Each record carries
+start/end, duration, litres (from the session feed), mode, target, source and
+an inferred close reason (`completed` vs `manual_off`). The water-total
+sensors plug straight into HA's water dashboard and long-term statistics, and
+each recorded run also fires a `zha_sonoff_quirks_irrigation_completed` event
+for automations. When both channels run simultaneously the litres cannot be
+attributed (the session feed is global) and are recorded as unknown.
+
+> **Startup note.** ZHA loads before this integration on a cold Home
+> Assistant start, so the SWV devices can come up without the quirk (all the
+> entities above `unavailable`). The integration detects that after startup
+> and reloads ZHA once, automatically; you may notice ZHA briefly restarting
+> right after boot. This is expected.
 
 The state and usage sensors derive from upstream PR
 [zigpy/zha-device-handlers#4993](https://github.com/zigpy/zha-device-handlers/pull/4993);
@@ -128,6 +149,12 @@ configuration block (liters or minutes) and **two green start buttons, one per
 line**. The running line's button turns into a red stop. Progress comes from
 the `0x501F` session feed (device truth: survives a browser refresh and shows
 automation-started runs too).
+
+When idle, the "last session" row shows the previous run and — from 0.5.0 —
+a chevron that expands the **run history**: the recent runs of both lines
+merged (date, line, duration, litres), fed by the integration's history
+sensors. Configs saved with 0.4.0 pick the history entities up automatically
+at runtime; no need to reopen the editor.
 
 Add it from the dashboard card picker (*Sonoff Valve (Irrigation)*): pick the
 device in the visual editor and it resolves all entities by `unique_id`,

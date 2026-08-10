@@ -124,24 +124,24 @@ non è esposta via API (né servizio né comando WebSocket accessibile dal proxy
 MCP), va fatta dalla UI: HACS → ⋮ → Custom repositories →
 `https://github.com/SimoneAvogadro/zha-sonoff-quirks`, categoria *Integration*.
 
-## 8. Adozione da parte di `tuya_irrigation` — DA CAPIRE
+## 8. Adozione da parte di `tuya_irrigation` — DA DISMETTERE
 
 L'integrazione `tuya_irrigation` (repo `tuya-cards-for-ha`) ha già adottato via
 discovery lo switch della SWV-ZF2: esistono
 `sensor.sonoff_swv_zf2_switch_irrigation_history` e
 `sensor.sonoff_swv_zf2_switch_irrigation_water_total`.
 
-Non è chiaro se sia un bene o un problema. Da chiarire:
+**Verificato il 2026-08-10**: il run-log si popola (start/end/durata corretti,
+8 corse del test del 2026-08-09 registrate) ma è monco — `liters`, `mode` e
+`target` sempre `null` (mancano le DP Tuya), `water_total` fermo a 0, e copre
+solo il canale 1. Dalla 0.5.0 questa integrazione ha uno storico nativo
+per-canale arricchito con litri/modalità/target dai sensori `session_*`, che
+lo rende superfluo.
 
-- il keep-alive orario e lo sweep di chiusura allo shutdown agiscono su questa
-  valvola? Con che effetto su un dispositivo che si chiude già da solo?
-- il run-log/storico si popola correttamente, o resta vuoto perché mancano le
-  DP Tuya che si aspetta?
-- conviene lasciarla fare (si ottiene lo storico gratis) o escludere il
-  dispositivo dalla discovery?
-
-Rilevante anche per la card: se lo storico funziona, una card Sonoff potrebbe
-riusarlo invece di rinunciarvi.
+**Residuo**: escludere la SWV-ZF2 dalla discovery di `tuya_irrigation` (lavoro
+sul repo `tuya-cards-for-ha`) per evitare il doppio run-log sullo stesso
+switch. Da chiarire lì anche l'effetto del keep-alive orario e dello sweep di
+chiusura allo shutdown su una valvola che si chiude da sola on-device.
 
 ## 9. Verificare i campi incerti di `0x501F` — DA FARE
 
@@ -185,3 +185,13 @@ Conseguenze da verificare:
 - **riverificare sul dispositivo l'accuratezza del volume erogato in litri**
   dopo la correzione: target noto (es. 5 L), confronto con `0x5007` e con il
   volume reale raccolto.
+
+## 10. Storico agganciato all'`entity_id` dello switch — LIMITE NOTO
+
+Lo store del run log (`.storage/zha_sonoff_quirks_history`) e gli `unique_id`
+dei sensori history/water-total incorporano l'`entity_id` dello switch del
+canale. Rinominare quell'entity_id (operazione lecita in HA) fa ripartire lo
+storico da zero: nuove entità sensore, contatore `total_increasing` azzerato,
+corse precedenti orfane sotto la vecchia chiave (non perse: restano nel file).
+Fix corretto: chiavare per `id` di registry dello switch (stabile ai rename)
+con migrazione dello store. Rimandato: rename raro, danno limitato.

@@ -7,15 +7,25 @@ interrogation — exactly as if they had been dropped into the directory
 configured by `zha.custom_quirks_path`.
 
 The quirks register themselves as a side-effect of being imported (a
-`QuirkBuilder(...).add_to_registry()` call). The import below must therefore
-happen at module load time, before ZHA enumerates devices — which it does,
-because Home Assistant imports this module when the integration is set up.
+`QuirkBuilder(...).add_to_registry()` call). The import below happens at
+module load time — but that is NOT guaranteed to precede ZHA's device
+enumeration: this integration declares `zha` as a manifest dependency, so on
+a cold HA start ZHA sets up (and applies quirks to its devices) BEFORE this
+module is imported, and the SWV devices come up without the quirk (all custom
+entities `unavailable`). Observed live on 2026-08-09. The fix is
+`_async_ensure_quirk_applied`: after HA has started, inspect the ZHA gateway
+and, if an SWV device lacks a quirk, reload the ZHA config entry ONCE per HA
+session — the quirks are registered in-process by then, so the reload applies
+them deterministically.
 
 On top of the quirks, the integration:
 
 - registers two device-centric irrigation services (see `services.py`) that
   bundle the "configure mode/target/fail-safe, then open the channel" entity
   sequence into a single call;
+- records every irrigation run (any origin: services, automations, physical
+  button, on-device auto-close) into a persistent per-channel run log
+  (`history.py`) surfaced by two sensors per channel (`sensor.py`);
 - serves the companion Lovelace card (`www/sonoff-valve-card.js`) via a
   static path and auto-registers it as a dashboard resource, so users don't
   have to add the resource manually.
@@ -30,15 +40,17 @@ import logging
 from pathlib import Path
 
 from homeassistant.components.http import StaticPathConfig
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.setup import async_when_setup
 
 # Import for side-effect: registers bundled ZHA quirks into zigpy's global
-# registry. Needs to happen at module load time so ZHA picks them up before
-# enumerating devices.
+# registry. On a cold start this still happens AFTER ZHA set up (zha is a
+# manifest dependency); _async_ensure_quirk_applied closes that gap.
 from . import quirks  # noqa: F401
-from .const import JSMODULES, URL_BASE
+from .const import DOMAIN, JSMODULES, PLATFORMS, SWV_MODELS, URL_BASE
+from .history import SwvRunLog
 from .services import async_setup_services, async_unload_services
 
 _LOGGER = logging.getLogger(__name__)
@@ -47,28 +59,120 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up the integration from a config entry.
 
-    The actual quirk registration already happened at import time (see the
-    `from . import quirks` above). Here we additionally serve and auto-register
-    the bundled Lovelace card and register the irrigation services.
+    Quirk registration happened at import time; here we serve the Lovelace
+    card, register the irrigation services, start the run log and its sensor
+    platform, and schedule the quirk-applied check (see module docstring).
     """
+    data = hass.data.setdefault(DOMAIN, {})
     await _async_register_frontend(hass)
     async_setup_services(hass)
-    _LOGGER.debug("ZHA Sonoff Quirks enabled (quirks registered at import time)")
+    run_log = SwvRunLog(hass)
+    data["run_log"] = run_log
+    await run_log.async_setup()
+    try:
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    except Exception:
+        # No orphaned observer: a failed setup would otherwise leave this
+        # run log's subscriptions live while HA's retry builds a second one —
+        # two writers racing on the same store.
+        data.pop("run_log", None)
+        async_unload_services(hass)
+        await run_log.async_unload()
+        raise
+    _async_schedule_quirk_check(hass)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry.
 
-    The services are removed, but quirk registration cannot be cleanly undone
-    (the registry has no public de-registration API) and persists for the
-    lifetime of the HA process. The static path and the Lovelace resource
-    likewise stay registered — HA exposes no clean way to undo them, and
-    leaving them idle is harmless. A restart is required to fully remove the
-    quirks.
+    The services are removed and the run log flushed, but quirk registration
+    cannot be cleanly undone (the registry has no public de-registration API)
+    and persists for the lifetime of the HA process. The static path and the
+    Lovelace resource likewise stay registered — HA exposes no clean way to
+    undo them, and leaving them idle is harmless. A restart is required to
+    fully remove the quirks.
     """
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if not unload_ok:
+        # The entry stays loaded: keep services and run log alive too,
+        # otherwise the still-registered sensors would point at a dead one.
+        return False
     async_unload_services(hass)
+    run_log: SwvRunLog | None = hass.data.get(DOMAIN, {}).pop("run_log", None)
+    if run_log is not None:
+        await run_log.async_unload()
     return True
+
+
+@callback
+def _async_schedule_quirk_check(hass: HomeAssistant) -> None:
+    """Run the quirk-applied check once HA is fully started.
+
+    At startup the check must wait for EVENT_HOMEASSISTANT_STARTED so ZHA has
+    finished restoring its devices; when the entry is set up later (user just
+    added or reloaded the integration) it can run immediately.
+    """
+
+    async def _check(_event=None) -> None:
+        await _async_ensure_quirk_applied(hass)
+
+    if hass.is_running:
+        hass.async_create_task(_check())
+    else:
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _check)
+
+
+async def _async_ensure_quirk_applied(hass: HomeAssistant) -> None:
+    """Reload ZHA once if an SWV device came up without its quirk.
+
+    On a cold HA start ZHA applies quirks before this integration's module is
+    imported (see module docstring), leaving every custom entity of the valve
+    `unavailable`. By the time this runs the quirks ARE in zigpy's registry,
+    so one ZHA reload re-initializes the devices with the quirk applied.
+
+    Guarded to a single reload per HA session: if the quirk still doesn't
+    apply after the reload the cause is not ordering, and retrying would loop
+    a full Zigbee network restart forever.
+    """
+    data = hass.data.setdefault(DOMAIN, {})
+    if data.get("zha_reload_done"):
+        return
+    try:
+        from homeassistant.components.zha.helpers import get_zha_gateway
+
+        gateway = get_zha_gateway(hass)
+    except Exception as err:  # noqa: BLE001 - ZHA internals, degrade quietly
+        _LOGGER.debug("Cannot inspect the ZHA gateway (%s); skipping check", err)
+        return
+
+    # Fail-closed on ZHA API drift: only an EXPLICIT quirk_applied == False
+    # counts as unquirked. If zha ever renames the attribute, getattr returns
+    # None and we skip — better no auto-heal than a spurious full Zigbee
+    # restart on every boot forever.
+    unquirked = [
+        device
+        for device in getattr(gateway, "devices", {}).values()
+        if getattr(device, "model", None) in SWV_MODELS
+        and getattr(device, "quirk_applied", None) is False
+    ]
+    if not unquirked:
+        return
+
+    zha_entries = [
+        e
+        for e in hass.config_entries.async_entries("zha")
+        if e.state is ConfigEntryState.LOADED
+    ]
+    if not zha_entries:
+        return
+    data["zha_reload_done"] = True
+    _LOGGER.warning(
+        "SWV device(s) %s initialized without the quirk (ZHA loaded before the "
+        "quirk registration); reloading ZHA once to apply it",
+        ", ".join(str(getattr(d, "name", d)) for d in unquirked),
+    )
+    await hass.config_entries.async_reload(zha_entries[0].entry_id)
 
 
 async def _async_register_frontend(hass: HomeAssistant) -> None:

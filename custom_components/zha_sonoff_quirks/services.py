@@ -25,15 +25,15 @@ run early is a plain ``switch.turn_off`` on the channel switch.
 from __future__ import annotations
 
 import logging
-import re
 
 from homeassistant.core import Context, HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
 import voluptuous as vol
 
 from .const import DOMAIN
+from .helpers import resolve_entities
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -54,25 +54,6 @@ ATTR_FAIL_SAFE_MINUTES = "fail_safe_minutes"
 # these exact strings.
 MODE_OPTION_DURATION = "duration"
 MODE_OPTION_CAPACITY = "capacity"
-
-# unique_id suffixes of the quirk entities, WITH the joining hyphen included:
-# quirk entities get unique_id = f"{ieee}-{endpoint}-{unique_id_suffix}", and
-# matching without the leading "-" is ambiguous (e.g. bare "duration" is a
-# suffix of both "irrigation_duration" and "session_target_duration").
-_SUFFIX_MODE = "-irrigation_mode"
-_SUFFIX_DURATION = "-irrigation_duration"
-_SUFFIX_VOLUME = "-irrigation_volume"
-_SUFFIX_FAIL_SAFE = "-fail_safe"
-
-# The channel switches are plain zha OnOff entities (not quirk entities), so
-# their unique_id is "<ieee>-<endpoint>" or "<ieee>-<endpoint>-6" depending on
-# the endpoint's Zigbee device_type (zha appends the OnOff cluster id, 6 in
-# decimal, unless the device_type is a plug/light profile type). The SWV-ZF2's
-# real device_type is not pinned down, so accept both shapes and read the
-# channel out of the endpoint group. Only ever applied to switch-domain
-# entries: outside that domain a bare "...-1" tail is ambiguous (the battery
-# sensor's unique_id "<ieee>-1-1" also ends with "-1").
-_SWITCH_UNIQUE_ID_RE = re.compile(r"-([12])(-6)?$")
 
 # Shared fields of both services. channel is coerced to str so a caller that
 # sends the number 1 instead of the documented "1" still works.
@@ -103,48 +84,6 @@ MINUTES_SCHEMA = vol.Schema(
 )
 
 
-def _resolve_entities(
-    hass: HomeAssistant, device_id: str, channel: str
-) -> dict[str, str | None]:
-    """Map a device-registry id to the entity_ids the services drive.
-
-    Walks the entity registry entries of ``device_id`` and matches them by
-    unique_id suffix (anchored with the joining hyphen) within their HA
-    domain. Matching by unique_id rather than entity_id is deliberate: the
-    user can rename entity_ids freely, but registry unique_ids are stable.
-
-    Returns a dict with keys ``mode``/``duration``/``volume``/``fail_safe``/
-    ``switch`` (the switch is the one for ``channel``); unmatched keys are
-    None so the caller can report exactly what is missing.
-    """
-    ent_reg = er.async_get(hass)
-    found: dict[str, str | None] = {
-        "mode": None,
-        "duration": None,
-        "volume": None,
-        "fail_safe": None,
-        "switch": None,
-    }
-    for entry in er.async_entries_for_device(ent_reg, device_id):
-        # Registry unique_ids keep the ieee's colons; lowercase both sides so
-        # a differently-cased ieee cannot break the suffix match.
-        uid = entry.unique_id.lower()
-        if entry.domain == "select" and uid.endswith(_SUFFIX_MODE):
-            found["mode"] = entry.entity_id
-        elif entry.domain == "number":
-            if uid.endswith(_SUFFIX_DURATION):
-                found["duration"] = entry.entity_id
-            elif uid.endswith(_SUFFIX_VOLUME):
-                found["volume"] = entry.entity_id
-            elif uid.endswith(_SUFFIX_FAIL_SAFE):
-                found["fail_safe"] = entry.entity_id
-        elif entry.domain == "switch":
-            match = _SWITCH_UNIQUE_ID_RE.search(uid)
-            if match is not None and match.group(1) == channel:
-                found["switch"] = entry.entity_id
-    return found
-
-
 async def _async_start_irrigation(
     hass: HomeAssistant,
     device_id: str,
@@ -168,7 +107,7 @@ async def _async_start_irrigation(
     the logbook attributes the valve opening to the user/automation that
     asked for it, and HA's per-user entity permission checks apply.
     """
-    entities = _resolve_entities(hass, device_id, channel)
+    entities = resolve_entities(hass, device_id, channel)
     if not any(entities.values()):
         raise HomeAssistantError(
             f"No SWV-ZF2 entities found for device {device_id} — is it a "
@@ -233,15 +172,30 @@ async def _async_start_irrigation(
             blocking=True,
             context=context,
         )
-    # Open the valve last. Nothing else to do afterwards: the SWV-ZF2 closes
-    # the channel on-device when the target volume/duration is reached.
-    await hass.services.async_call(
-        "switch",
-        "turn_on",
-        {"entity_id": switch_entity},
-        blocking=True,
-        context=context,
-    )
+    # Hand the run log its attribution BEFORE the switch turns on: the
+    # observer reads (and consumes) this on the off→on transition. Cleared on
+    # failure so a run the valve never started can't tag the next manual one.
+    pending = hass.data.setdefault(DOMAIN, {}).setdefault("pending", {})
+    pending[switch_entity] = {
+        "source": "integration",
+        # The run log drops entries older than its TTL: if the switch never
+        # confirms this start, the attribution must not stick to a much later
+        # manual run.
+        "ts": dt_util.utcnow().timestamp(),
+    }
+    try:
+        # Open the valve last. Nothing else to do afterwards: the SWV-ZF2
+        # closes the channel on-device when the target is reached.
+        await hass.services.async_call(
+            "switch",
+            "turn_on",
+            {"entity_id": switch_entity},
+            blocking=True,
+            context=context,
+        )
+    except Exception:
+        pending.pop(switch_entity, None)
+        raise
 
 
 def async_setup_services(hass: HomeAssistant) -> None:
