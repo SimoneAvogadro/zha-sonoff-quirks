@@ -70,9 +70,9 @@ event system and adapted to the dual-channel model.
 1. HACS → ⋮ menu → **Custom repositories** → add
    `https://github.com/SimoneAvogadro/zha-sonoff-quirks` with category
    **Integration**.
-2. Search for *ZHA Sonoff Quirks*, then **Download**.
+2. Search for *Sonoff ZHA*, then **Download**.
 3. **Restart Home Assistant.**
-4. `Settings → Devices & services → Add integration → ZHA Sonoff Quirks` →
+4. `Settings → Devices & services → Add integration → Sonoff ZHA` →
    Submit. There is nothing to configure: the integration exists only to make
    the quirk get imported at startup.
 5. Continue with the device **Reconfigure** (see below).
@@ -222,12 +222,21 @@ custom_components/zha_sonoff_quirks/
   __init__.py        # imports quirks/ at startup; serves the card; services
   config_flow.py     # one-click flow, no options
   services.py        # irrigation_by_liters / irrigation_by_minutes
+  services.yaml      # field selectors only; labels live in strings.json
+  icons.json         # per-action icons, so the action picker stays readable
+  strings.json       # source of truth; translations/ mirrors its key tree
   quirks/
     sonoff_swv_zf2.py  # THE quirk (single copy; integrity in checksums.sha256)
   www/
     sonoff-valve-card.js  # Lovelace card (auto-registered as a resource)
-tests/               # 61 offline tests, no device required
+tests/               # 98 offline tests, no device required
 ```
+
+Action names are deliberately **front-loaded with the unit** (*Liters (volume
+irrigation)* / *Minutes (timed irrigation)*): Home Assistant's action picker
+renders one truncated line per action, so a shared prefix makes the two
+indistinguishable on mobile. `tests/test_translations.py` enforces that rule
+for every language.
 
 The quirk is deliberately **self-contained**: it imports nothing from the
 integration, so it behaves identically whether loaded via HACS or dropped into

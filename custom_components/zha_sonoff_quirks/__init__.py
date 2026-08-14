@@ -1,4 +1,4 @@
-"""ZHA Sonoff Quirks custom integration.
+"""Sonoff ZHA custom integration.
 
 This integration ships custom ZHA quirks for SONOFF Zigbee devices. Its first
 job is to make sure the bundled quirk modules are imported, which registers

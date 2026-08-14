@@ -1,0 +1,67 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "设置 Sonoff ZHA",
+        "description": "点击提交以启用 Sonoff ZHA 集成。它会注册随附的 SONOFF Zigbee 设备 ZHA 自定义 quirk（目前为 SWV-ZF2 双线路水阀）。此处无需配置。若要让 quirk 应用到已配对的设备，可能需要重启 Home Assistant，然后对设备执行重新配置。"
+      }
+    },
+    "abort": {
+      "already_configured": "Sonoff ZHA 已配置。"
+    }
+  },
+  "selector": {
+    "channel": {
+      "options": {
+        "1": "线路 1",
+        "2": "线路 2"
+      }
+    }
+  },
+  "services": {
+    "irrigation_by_liters": {
+      "name": "升量（定量灌溉）",
+      "description": "定量：打开 SONOFF SWV-ZF2 水阀所选的线路；达到设定升量后，水阀会自行关闭。",
+      "fields": {
+        "device_id": {
+          "name": "设备",
+          "description": "用于灌溉的 SONOFF SWV-ZF2 水阀。"
+        },
+        "channel": {
+          "name": "线路",
+          "description": "要打开水阀两条线路中的哪一条。"
+        },
+        "liters": {
+          "name": "升量",
+          "description": "目标出水量，单位为升。"
+        },
+        "fail_safe_minutes": {
+          "name": "安全超时",
+          "description": "线路允许保持打开的最长时间，单位为分钟（0 表示禁用安全保护）。若不设置，水阀保留当前的安全超时设置。"
+        }
+      }
+    },
+    "irrigation_by_minutes": {
+      "name": "分钟（定时灌溉）",
+      "description": "定时：打开 SONOFF SWV-ZF2 水阀所选的线路；设定的分钟数结束后，水阀会自行关闭。",
+      "fields": {
+        "device_id": {
+          "name": "设备",
+          "description": "用于灌溉的 SONOFF SWV-ZF2 水阀。"
+        },
+        "channel": {
+          "name": "线路",
+          "description": "要打开水阀两条线路中的哪一条。"
+        },
+        "minutes": {
+          "name": "分钟",
+          "description": "灌溉时长，单位为分钟。"
+        },
+        "fail_safe_minutes": {
+          "name": "安全超时",
+          "description": "线路允许保持打开的最长时间，单位为分钟（0 表示禁用安全保护）。若不设置，水阀保留当前的安全超时设置。"
+        }
+      }
+    }
+  }
+}

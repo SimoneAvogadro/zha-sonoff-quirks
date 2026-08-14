@@ -1,4 +1,4 @@
-"""ZHA custom quirks bundled with the ZHA Sonoff Quirks integration.
+"""ZHA custom quirks bundled with the Sonoff ZHA integration.
 
 Importing this package as a side-effect registers each quirk with the
 QuirksV2 builder registry (`add_to_registry()`). ZHA then applies them on

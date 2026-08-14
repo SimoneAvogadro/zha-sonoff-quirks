@@ -2,12 +2,12 @@
   "config": {
     "step": {
       "user": {
-        "title": "Configura ZHA Sonoff Quirks",
-        "description": "Premi Invia per abilitare l'integrazione ZHA Sonoff Quirks. Registra i quirk ZHA personalizzati per dispositivi SONOFF Zigbee (al momento l'elettrovalvola dual-channel SWV-ZF2). Non c'è nulla da configurare qui. Potrebbe essere necessario riavviare Home Assistant affinché i quirk vengano applicati ai dispositivi già accoppiati, seguito da un Reconfigure sul dispositivo."
+        "title": "Configura Sonoff ZHA",
+        "description": "Premi Invia per abilitare l'integrazione Sonoff ZHA. Registra i quirk ZHA personalizzati per dispositivi SONOFF Zigbee (al momento l'elettrovalvola dual-channel SWV-ZF2). Non c'è nulla da configurare qui. Potrebbe essere necessario riavviare Home Assistant affinché i quirk vengano applicati ai dispositivi già accoppiati, seguito da un Reconfigure sul dispositivo."
       }
     },
     "abort": {
-      "already_configured": "ZHA Sonoff Quirks è già configurato."
+      "already_configured": "Sonoff ZHA è già configurato."
     }
   },
   "selector": {
@@ -20,8 +20,8 @@
   },
   "services": {
     "irrigation_by_liters": {
-      "name": "Irrigazione a litri",
-      "description": "Configura l'elettrovalvola SONOFF SWV-ZF2 per un'erogazione a volume e apre la linea selezionata. La valvola chiude la linea da sola una volta erogato il volume richiesto.",
+      "name": "Litri (irrigazione a volume)",
+      "description": "Volume: apre la linea scelta dell'elettrovalvola SONOFF SWV-ZF2; la valvola la chiude da sola una volta erogati i litri impostati.",
       "fields": {
         "device_id": {
           "name": "Dispositivo",
@@ -42,8 +42,8 @@
       }
     },
     "irrigation_by_minutes": {
-      "name": "Irrigazione a minuti",
-      "description": "Configura l'elettrovalvola SONOFF SWV-ZF2 per un'erogazione a tempo e apre la linea selezionata. La valvola chiude la linea da sola allo scadere del tempo.",
+      "name": "Minuti (irrigazione a tempo)",
+      "description": "Tempo: apre la linea scelta dell'elettrovalvola SONOFF SWV-ZF2; la valvola la chiude da sola allo scadere dei minuti impostati.",
       "fields": {
         "device_id": {
           "name": "Dispositivo",

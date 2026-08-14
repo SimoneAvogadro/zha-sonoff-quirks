@@ -1,4 +1,4 @@
-"""Config flow for the ZHA Sonoff Quirks integration.
+"""Config flow for the Sonoff ZHA integration.
 
 The integration has no user-visible options — its only job is to register
 bundled ZHA custom quirks into zigpy's global registry at import time. This
@@ -30,4 +30,4 @@ class ZhaSonoffQuirksConfigFlow(ConfigFlow, domain=DOMAIN):
         """Handle the user clicking 'Add Integration'."""
         await self.async_set_unique_id(DOMAIN)
         self._abort_if_unique_id_configured()
-        return self.async_create_entry(title="ZHA Sonoff Quirks", data={})
+        return self.async_create_entry(title="Sonoff ZHA", data={})

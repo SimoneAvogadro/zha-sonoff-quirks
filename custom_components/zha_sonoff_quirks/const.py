@@ -1,7 +1,7 @@
-"""Constants for the ZHA Sonoff Quirks integration."""
+"""Constants for the Sonoff ZHA integration."""
 
 DOMAIN = "zha_sonoff_quirks"
-VERSION = "0.5.2"
+VERSION = "0.6.0"
 
 # Entity platforms owned by the integration itself (the quirk entities are
 # created by ZHA, not by us; these are the run-history sensors).

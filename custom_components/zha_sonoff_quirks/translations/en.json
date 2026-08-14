@@ -2,12 +2,12 @@
   "config": {
     "step": {
       "user": {
-        "title": "Set up ZHA Sonoff Quirks",
-        "description": "Click Submit to enable the ZHA Sonoff Quirks integration. It registers the bundled ZHA custom quirks for SONOFF Zigbee devices (currently the SWV-ZF2 dual-channel water valve). There is nothing to configure here. A Home Assistant restart may be required for the quirks to apply to already-joined devices, followed by a Reconfigure on the device."
+        "title": "Set up Sonoff ZHA",
+        "description": "Click Submit to enable the Sonoff ZHA integration. It registers the bundled ZHA custom quirks for SONOFF Zigbee devices (currently the SWV-ZF2 dual-channel water valve). There is nothing to configure here. A Home Assistant restart may be required for the quirks to apply to already-joined devices, followed by a Reconfigure on the device."
       }
     },
     "abort": {
-      "already_configured": "ZHA Sonoff Quirks is already set up."
+      "already_configured": "Sonoff ZHA is already set up."
     }
   },
   "selector": {
@@ -20,8 +20,8 @@
   },
   "services": {
     "irrigation_by_liters": {
-      "name": "Irrigation by liters",
-      "description": "Configures the SONOFF SWV-ZF2 valve for a volume-limited run and opens the selected channel. The valve closes the channel by itself once the volume has been delivered.",
+      "name": "Liters (volume irrigation)",
+      "description": "Volume: opens the chosen channel of the SONOFF SWV-ZF2 valve; the valve closes it by itself once the target liters have been delivered.",
       "fields": {
         "device_id": {
           "name": "Device",
@@ -42,8 +42,8 @@
       }
     },
     "irrigation_by_minutes": {
-      "name": "Irrigation by minutes",
-      "description": "Configures the SONOFF SWV-ZF2 valve for a time-limited run and opens the selected channel. The valve closes the channel by itself when the time is up.",
+      "name": "Minutes (timed irrigation)",
+      "description": "Time: opens the chosen channel of the SONOFF SWV-ZF2 valve; the valve closes it by itself when the set minutes are up.",
       "fields": {
         "device_id": {
           "name": "Device",
