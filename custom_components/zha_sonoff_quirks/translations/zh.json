@@ -20,7 +20,7 @@
   },
   "services": {
     "irrigation_by_liters": {
-      "name": "升量（定量灌溉）",
+      "name": "升量🪣💧（🌱定量灌溉）",
       "description": "定量：打开 SONOFF SWV-ZF2 水阀所选的线路；达到设定升量后，水阀会自行关闭。",
       "fields": {
         "device_id": {
@@ -42,7 +42,7 @@
       }
     },
     "irrigation_by_minutes": {
-      "name": "分钟（定时灌溉）",
+      "name": "分钟⏰💧（🌱定时灌溉）",
       "description": "定时：打开 SONOFF SWV-ZF2 水阀所选的线路；设定的分钟数结束后，水阀会自行关闭。",
       "fields": {
         "device_id": {

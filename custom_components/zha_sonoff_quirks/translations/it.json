@@ -20,7 +20,7 @@
   },
   "services": {
     "irrigation_by_liters": {
-      "name": "Litri (irrigazione a volume)",
+      "name": "Litri🪣💧 (🌱irrigazione a volume)",
       "description": "Volume: apre la linea scelta dell'elettrovalvola SONOFF SWV-ZF2; la valvola la chiude da sola una volta erogati i litri impostati.",
       "fields": {
         "device_id": {
@@ -42,7 +42,7 @@
       }
     },
     "irrigation_by_minutes": {
-      "name": "Minuti (irrigazione a tempo)",
+      "name": "Minuti⏰💧 (🌱irrigazione a tempo)",
       "description": "Tempo: apre la linea scelta dell'elettrovalvola SONOFF SWV-ZF2; la valvola la chiude da sola allo scadere dei minuti impostati.",
       "fields": {
         "device_id": {

@@ -20,7 +20,7 @@
   },
   "services": {
     "irrigation_by_liters": {
-      "name": "Liters (volume irrigation)",
+      "name": "Liters🪣💧 (🌱volume irrigation)",
       "description": "Volume: opens the chosen channel of the SONOFF SWV-ZF2 valve; the valve closes it by itself once the target liters have been delivered.",
       "fields": {
         "device_id": {
@@ -42,7 +42,7 @@
       }
     },
     "irrigation_by_minutes": {
-      "name": "Minutes (timed irrigation)",
+      "name": "Minutes⏰💧 (🌱timed irrigation)",
       "description": "Time: opens the chosen channel of the SONOFF SWV-ZF2 valve; the valve closes it by itself when the set minutes are up.",
       "fields": {
         "device_id": {

@@ -1,6 +1,6 @@
 {
   "services": {
-    "irrigation_by_liters": { "service": "mdi:water" },
-    "irrigation_by_minutes": { "service": "mdi:timer-outline" }
+    "irrigation_by_liters": { "service": "mdi:bucket-outline" },
+    "irrigation_by_minutes": { "service": "mdi:clock-outline" }
   }
 }

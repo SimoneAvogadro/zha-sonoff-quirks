@@ -232,11 +232,13 @@ custom_components/zha_sonoff_quirks/
 tests/               # 98 offline tests, no device required
 ```
 
-Action names are deliberately **front-loaded with the unit** (*Liters (volume
-irrigation)* / *Minutes (timed irrigation)*): Home Assistant's action picker
-renders one truncated line per action, so a shared prefix makes the two
-indistinguishable on mobile. `tests/test_translations.py` enforces that rule
-for every language.
+Action names are deliberately **front-loaded with the unit** (*Liters🪣💧
+(🌱volume irrigation)* / *Minutes⏰💧 (🌱timed irrigation)*): Home Assistant's
+action picker renders one truncated line per action, so a shared prefix makes
+the two indistinguishable on mobile. The emoji and the per-action icons in
+`icons.json` carry the same distinction without depending on the reader's
+language. `tests/test_translations.py` enforces the prefix rule for every
+translation.
 
 The quirk is deliberately **self-contained**: it imports nothing from the
 integration, so it behaves identically whether loaded via HACS or dropped into
