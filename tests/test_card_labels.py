@@ -51,14 +51,33 @@ def test_le_etichette_di_default_finiscono_con_la_lettera(key: str, letter: str)
 
 
 def test_ogni_id_del_template_ha_un_riferimento_dom():
-    """Gli span di lettera e i loro wrapper devono essere raggiunti dal render."""
-    ids = set(re.findall(r'id="((?:chid|chc)-[a-z0-9]+)"', CARD))
-    assert len(ids) == 8, f"attesi 8 id lettera/wrapper, trovati {sorted(ids)}"
+    """Lettera, icona e wrapper di ogni pulsante devono essere raggiunti dal render."""
+    # 4 pulsanti (litri/tempo x linea A/B), ciascuno con: il wrapper che porta
+    # il tooltip, lo span della lettera dentro il pulsante e lo span dell'icona.
+    ids = set(re.findall(r'id="((?:chc|gbl|gbi)-[a-z0-9]+)"', CARD))
+    assert len(ids) == 12, f"attesi 12 id, trovati {sorted(ids)}"
     for element_id in sorted(ids):
         assert f'$("{element_id}")' in CARD, (
             f"l'id {element_id} esiste nel template ma non e' in this._el: "
             "il render non lo aggiornerebbe mai"
         )
+
+
+def test_l_icona_ha_un_contenitore_suo_dentro_il_pulsante():
+    """La lettera non deve essere spazzata via dallo swap play/stop.
+
+    Il render sostituisce l'icona a ogni cambio di stato: se lo facesse sul
+    pulsante intero (b.innerHTML) cancellerebbe anche la lettera accanto.
+    """
+    assert not re.search(r"\bb\.innerHTML\s*=", CARD), (
+        "l'icona viene ancora scritta sull'intero pulsante: cancellerebbe la lettera"
+    )
+
+
+def test_la_lettera_sopra_il_pulsante_e_stata_rimossa():
+    """La vecchia resa (lettera sopra il cerchio) non deve lasciare residui."""
+    for residue in ('class="chid"', "chid-l1", ".chid{", "chidL1"):
+        assert residue not in CARD, f"residuo della resa precedente: {residue}"
 
 
 # ── Entita' "Nome linea": prefisso unique_id condiviso con text.py ──

@@ -167,11 +167,12 @@ device-level name. Order of precedence, most specific first:
 2. the *Line name A / B* entity on the device
 3. `Line A` / `Line B`
 
-Naming a line never hides its letter: with a name set, the card shows the
-letter above the start button and the name below it, and writes `A · 33
-davanti` in the history rows, the pending overlay and the button tooltip. That
-keeps the pairing in front of you, which is what you need when the automation
-editor asks for *Line A*.
+Naming a line never hides its letter. The letter rides **inside** its start
+button — `(A ▶)` — so the button itself says which outlet it opens; the name
+sits underneath, and the history rows, the pending overlay and the button
+tooltip read `A · 33 davanti`. That keeps the pairing in front of you, which is
+what you need when the automation editor asks for *Line A*. A line with no name
+shows no caption at all: the button already carries the letter.
 
 Two caveats. The name is **not** the switch entity's name, so the logbook, the
 history and the voice assistant keep showing whatever the ZHA switch entities

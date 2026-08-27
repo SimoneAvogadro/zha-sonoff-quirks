@@ -2,6 +2,13 @@
  * Sonoff Valve Card (Irrigation) for Home Assistant
  * Custom Lovelace card for the SONOFF SWV-ZF2 dual-channel Zigbee water valve,
  * paired with the zha_sonoff_quirks integration (quirk + irrigation services).
+ * v0.9.1 — The line letter moves INSIDE its start button — (A ▶) — instead of
+ *          sitting above it, so the button says which outlet it opens without
+ *          a caption. The button becomes a pill and its icon gets its own
+ *          span, since the play/stop swap used to replace the whole button's
+ *          markup and would now wipe the letter. The caption below is left to
+ *          the custom name alone: with the letter on the button, repeating
+ *          "Linea A" underneath was noise.
  * v0.9.0 — The line names move to the device. The integration now owns two
  *          "Line name" text entities (device page → Configuration); the card
  *          reads them, so a valve shown on three dashboards is named once
@@ -662,10 +669,10 @@ class SonoffValveCard extends HTMLElement {
   }
   _isOffline() { return this._chOffline("1") && this._chOffline("2"); }
   // ── Channel naming ──
-  // One source (the optional name_1/name_2 config), four renderings: the
-  // letter alone (above the button), the name alone (below it), the two
-  // joined for single-line spots (history rows, pending overlay) and the
-  // spelled-out tooltip. With no custom name they all collapse to "Linea A".
+  // The letter lives on the button and never varies; the caption below it
+  // carries the name and nothing else, so it is empty until you set one. The
+  // two are joined for single-line spots (history rows, pending overlay) and
+  // spelled out in the tooltip, both falling back to "Linea A" when unnamed.
   _chId(ch) { return CH_LETTER[ch] || CH_LETTER["1"]; }
   // Per-card override first (name_1/name_2 in the card config), then the
   // device-level name the integration stores in its "Line name" text entity.
@@ -678,7 +685,6 @@ class SonoffValveCard extends HTMLElement {
     return state;
   }
   _chDefault(ch) { return _t(this._hass, ch === "2" ? "line2" : "line1"); }
-  _chName(ch) { return this._chCustom(ch) || this._chDefault(ch); }
   _chFull(ch) { const n = this._chCustom(ch); return n ? `${this._chId(ch)} · ${n}` : this._chDefault(ch); }
   _chTitle(ch) { const n = this._chCustom(ch); return n ? `${this._chDefault(ch)} — ${n}` : this._chDefault(ch); }
   _getName() {
@@ -1043,17 +1049,18 @@ ha-card{overflow:hidden}
 .ni{flex:1;min-width:0;padding:10px 12px;border:none;background:transparent;font-size:20px;font-weight:500;color:var(--tm);text-align:center;outline:none;font-family:monospace}
 .ut{padding:0 14px;font-size:13px;font-weight:600;color:var(--th);background:var(--bd);align-self:stretch;display:flex;align-items:center;border-left:1px solid var(--bd)}
 .fh{font-size:10px;color:var(--th);text-align:center;min-width:50px;margin-top:6px}
-.gb{width:44px;height:44px;border-radius:50%;flex-shrink:0;border:none;background:var(--accent);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;box-shadow:0 2px 12px rgba(46,204,139,.25)}.gb:hover{background:var(--accent-hover)}.gb:active{transform:scale(.93)}
+.gb{height:44px;padding:0 13px 0 11px;gap:5px;border-radius:22px;flex-shrink:0;border:none;background:var(--accent);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;box-shadow:0 2px 12px rgba(46,204,139,.25)}.gb:hover{background:var(--accent-hover)}.gb:active{transform:scale(.93)}
+/* The panel letter, inside the button and ahead of the icon: the button
+   itself says which outlet it opens, so the caption below is free to carry
+   nothing but the name you gave the line. */
+.gbl{font-size:13px;font-weight:700;line-height:1;color:#fff;letter-spacing:.02em}
+.gbi{display:flex;align-items:center;justify-content:center}
 @keyframes pg{0%,100%{box-shadow:0 0 0 0 rgba(226,85,85,.3)}50%{box-shadow:0 0 0 6px rgba(226,85,85,0)}}
 .gb.rn{animation:pg 1.2s infinite;background:var(--danger);box-shadow:0 2px 12px rgba(226,85,85,.3)}
 .gb.dis{opacity:.35;pointer-events:none;box-shadow:none;animation:none}
 .chc{display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0}
-.chl{font-size:9px;color:var(--th);max-width:56px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center}
-/* Panel letter above the button. Hidden while the line has no custom name:
-   with "Linea A" already below, an "A" on top is noise — and the row keeps
-   exactly the height it had before this feature existed. */
-.chid{display:none;font-size:9px;font-weight:700;letter-spacing:.06em;line-height:1;color:var(--th);text-align:center}
-.chid.vi{display:block}
+.chl{font-size:9px;color:var(--th);max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center}
+.chl:empty{display:none}
 .pw{height:3px;border-radius:2px;background:var(--bd);margin-top:6px;overflow:hidden;opacity:0;transition:opacity .2s}.pw.vi{opacity:1}
 .pb{height:100%;border-radius:2px;background:var(--accent);transition:width .3s linear}
 /* The history section is the query container for the collapsing date. It sits
@@ -1134,8 +1141,8 @@ input[type=number]{-moz-appearance:textfield}
       <div class="ip" id="ip-litri"><div>
         <div class="ir">
           <div class="nw"><input type="number" inputmode="numeric" pattern="[0-9]*" class="ni" id="vl" min="1" max="10000"><div class="ut">L</div></div>
-          <div class="chc" id="chc-l1"><span class="chid" id="chid-l1"></span><button class="gb" id="gl1">${ICON_PLAY}</button><span class="chl" id="chl-l1"></span></div>
-          <div class="chc" id="chc-l2"><span class="chid" id="chid-l2"></span><button class="gb" id="gl2">${ICON_PLAY}</button><span class="chl" id="chl-l2"></span></div>
+          <div class="chc" id="chc-l1"><button class="gb" id="gl1"><span class="gbl" id="gbl-l1"></span><span class="gbi" id="gbi-l1">${ICON_PLAY}</span></button><span class="chl" id="chl-l1"></span></div>
+          <div class="chc" id="chc-l2"><button class="gb" id="gl2"><span class="gbl" id="gbl-l2"></span><span class="gbi" id="gbi-l2">${ICON_PLAY}</span></button><span class="chl" id="chl-l2"></span></div>
         </div>
         <div class="fh" id="litri-fh" style="display:none"></div>
         <div class="pw" id="litri-pw"><div class="pb" id="litri-bar" style="width:0%"></div></div>
@@ -1143,8 +1150,8 @@ input[type=number]{-moz-appearance:textfield}
       <div class="ip" id="ip-tempo"><div>
         <div class="ir">
           <div class="nw"><input type="number" inputmode="numeric" pattern="[0-9]*" class="ni" id="tmin" min="1" max="719"><div class="ut">min</div></div>
-          <div class="chc" id="chc-t1"><span class="chid" id="chid-t1"></span><button class="gb" id="gt1">${ICON_PLAY}</button><span class="chl" id="chl-t1"></span></div>
-          <div class="chc" id="chc-t2"><span class="chid" id="chid-t2"></span><button class="gb" id="gt2">${ICON_PLAY}</button><span class="chl" id="chl-t2"></span></div>
+          <div class="chc" id="chc-t1"><button class="gb" id="gt1"><span class="gbl" id="gbl-t1"></span><span class="gbi" id="gbi-t1">${ICON_PLAY}</span></button><span class="chl" id="chl-t1"></span></div>
+          <div class="chc" id="chc-t2"><button class="gb" id="gt2"><span class="gbl" id="gbl-t2"></span><span class="gbi" id="gbi-t2">${ICON_PLAY}</span></button><span class="chl" id="chl-t2"></span></div>
         </div>
         <div class="fh" id="tempo-fh" style="display:none"></div>
         <div class="pw" id="tempo-pw"><div class="pb" id="tempo-bar" style="width:0%"></div></div>
@@ -1183,7 +1190,8 @@ input[type=number]{-moz-appearance:textfield}
       gl1: $("gl1"), gl2: $("gl2"), gt1: $("gt1"), gt2: $("gt2"),
       chlL1: $("chl-l1"), chlL2: $("chl-l2"), chlT1: $("chl-t1"), chlT2: $("chl-t2"),
       chcL1: $("chc-l1"), chcL2: $("chc-l2"), chcT1: $("chc-t1"), chcT2: $("chc-t2"),
-      chidL1: $("chid-l1"), chidL2: $("chid-l2"), chidT1: $("chid-t1"), chidT2: $("chid-t2"),
+      gblL1: $("gbl-l1"), gblL2: $("gbl-l2"), gblT1: $("gbl-t1"), gblT2: $("gbl-t2"),
+      gbiL1: $("gbi-l1"), gbiL2: $("gbi-l2"), gbiT1: $("gbi-t1"), gbiT2: $("gbi-t2"),
       litriFh: $("litri-fh"), litriPw: $("litri-pw"), litriBar: $("litri-bar"),
       tempoFh: $("tempo-fh"), tempoPw: $("tempo-pw"), tempoBar: $("tempo-bar"),
       startOv: $("start-ov"), startOvTxt: $("start-ov-txt"),
@@ -1265,29 +1273,38 @@ input[type=number]{-moz-appearance:textfield}
 
     // ── Channel labels + go buttons (each reflects only its own switch) ──
     for (const [ch, cells] of [
-      ["1", [[el.chcL1, el.chidL1, el.chlL1], [el.chcT1, el.chidT1, el.chlT1]]],
-      ["2", [[el.chcL2, el.chidL2, el.chlL2], [el.chcT2, el.chidT2, el.chlT2]]],
+      ["1", [[el.chcL1, el.gblL1, el.chlL1], [el.chcT1, el.gblT1, el.chlT1]]],
+      ["2", [[el.chcL2, el.gblL2, el.chlL2], [el.chcT2, el.gblT2, el.chlT2]]],
     ]) {
-      const named = !!this._chCustom(ch), letter = this._chId(ch);
-      const name = this._chName(ch), title = this._chTitle(ch);
-      for (const [wrap, idEl, lblEl] of cells) {
-        this._txt(idEl, letter);
-        this._cls(idEl, "vi", named);
+      const letter = this._chId(ch);
+      const name = this._chCustom(ch), title = this._chTitle(ch);
+      for (const [wrap, letterEl, lblEl] of cells) {
+        this._txt(letterEl, letter);
+        // Empty caption when the line has no name: .chl:empty collapses it, so
+        // an unnamed valve keeps exactly the height it had before.
         this._txt(lblEl, name);
         // The tooltip spells the pairing out on desktop; on touch, where there
-        // is no hover, the letter above the button is what carries it.
+        // is no hover, the letter on the button is what carries it.
         if (wrap && wrap.title !== title) wrap.title = title;
       }
     }
-    for (const [ch, btns] of [["1", [el.gl1, el.gt1]], ["2", [el.gl2, el.gt2]]]) {
+    for (const [ch, btns] of [
+      ["1", [[el.gl1, el.gbiL1], [el.gt1, el.gbiT1]]],
+      ["2", [[el.gl2, el.gbiL2], [el.gt2, el.gbiT2]]],
+    ]) {
       const on = this._chOn(ch);
       const dis = !offline && !fatal && this._chOffline(ch);
-      for (const b of btns) {
-        if (!b) continue;
-        this._cls(b, "rn", on);
-        this._cls(b, "dis", dis);
+      for (const [btn, icon] of btns) {
+        if (!btn) continue;
+        this._cls(btn, "rn", on);
+        this._cls(btn, "dis", dis);
         const want = on ? "stop" : "play";
-        if (b.dataset.icon !== want) { b.innerHTML = on ? ICON_STOP : ICON_PLAY; b.dataset.icon = want; }
+        // Written into the icon's own span: replacing the button's markup
+        // would take the letter with it.
+        if (icon && btn.dataset.icon !== want) {
+          icon.innerHTML = on ? ICON_STOP : ICON_PLAY;
+          btn.dataset.icon = want;
+        }
       }
     }
 
@@ -1391,4 +1408,4 @@ window.customCards = window.customCards || [];
   const pickerDesc = (I18N[lang] || I18N.en).cardDesc;
   window.customCards.push({ type: "sonoff-valve-card", name: pickerName, description: pickerDesc, preview: true });
 })();
-console.info("%c SONOFF-VALVE-CARD %c v0.9.0 ", "color:white;background:#2ecc8b;font-weight:bold;padding:2px 6px;border-radius:4px 0 0 4px;", "color:#2ecc8b;background:#1a1c2e;font-weight:bold;padding:2px 6px;border-radius:0 4px 4px 0;");
+console.info("%c SONOFF-VALVE-CARD %c v0.9.1 ", "color:white;background:#2ecc8b;font-weight:bold;padding:2px 6px;border-radius:4px 0 0 4px;", "color:#2ecc8b;background:#1a1c2e;font-weight:bold;padding:2px 6px;border-radius:0 4px 4px 0;");
