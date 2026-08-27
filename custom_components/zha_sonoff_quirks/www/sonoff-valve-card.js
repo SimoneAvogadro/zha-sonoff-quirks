@@ -2,6 +2,16 @@
  * Sonoff Valve Card (Irrigation) for Home Assistant
  * Custom Lovelace card for the SONOFF SWV-ZF2 dual-channel Zigbee water valve,
  * paired with the zha_sonoff_quirks integration (quirk + irrigation services).
+ * v0.7.1 — The date in the run rows collapses on a narrow card. Runs from the
+ *          last few days now carry their weekday: "Lunedì 24 ago 05:30" where
+ *          there is room, "Lunedì 05:30" where there isn't. The start time
+ *          never collapses, and a row older than a week has no weekday to
+ *          stand in for its date, so it keeps the date at every width.
+ *          Pure CSS — the markup holds both parts and an @container query on
+ *          the history section picks one, so resizing never re-renders rows.
+ *          _smartDateTime becomes _smartDateParts + _whenHtml; the compact
+ *          "ULTIMA" line adopts the same format, retiring _smartDate and the
+ *          atSep i18n key.
  * v0.7.0 — Run list unified with the Tuya irrigation card: scrollable (no more
  *          8-row cap), rows on a black background separated by a hairline, the
  *          start time in a fixed-width tabular column (_smartDateTime, "24 ago
@@ -47,7 +57,7 @@ const I18N = {
     liters: "Litri", time: "Tempo", remaining: "rimanente",
     line1: "Linea 1", line2: "Linea 2",
     last: "Ultima", duration: "Durata", none: "nessuna",
-    atSep: " alle ", today: "oggi", yesterday: "ieri",
+    today: "oggi", yesterday: "ieri",
     history: "Storico irrigazioni",
     oc_completed: "Completata", oc_stopped: "Interrotta", oc_timeout: "Timeout", oc_stalled: "Nessun flusso", oc_shutdown: "Riavvio", oc_auto: "Auto", oc_manual: "Manuale",
     configError: "Seleziona una valvola Sonoff nella configurazione",
@@ -71,7 +81,7 @@ const I18N = {
     liters: "Liters", time: "Time", remaining: "remaining",
     line1: "Line 1", line2: "Line 2",
     last: "Last", duration: "Duration", none: "none",
-    atSep: " at ", today: "today", yesterday: "yesterday",
+    today: "today", yesterday: "yesterday",
     history: "Irrigation history",
     oc_completed: "Completed", oc_stopped: "Stopped", oc_timeout: "Timeout", oc_stalled: "No flow", oc_shutdown: "Restart", oc_auto: "Auto", oc_manual: "Manual",
     configError: "Select a Sonoff valve in the configuration",
@@ -95,7 +105,7 @@ const I18N = {
     liters: "升量", time: "时长", remaining: "剩余",
     line1: "线路 1", line2: "线路 2",
     last: "上次", duration: "持续时间", none: "无",
-    atSep: " ", today: "今天", yesterday: "昨天",
+    today: "今天", yesterday: "昨天",
     history: "灌溉历史",
     oc_completed: "已完成", oc_stopped: "已停止", oc_timeout: "超时", oc_stalled: "无水流", oc_shutdown: "重启", oc_auto: "自动", oc_manual: "手动",
     configError: "请在配置中选择 Sonoff 水阀",
@@ -635,6 +645,11 @@ class SonoffValveCard extends HTMLElement {
   _txt(el, v) { if (el && el.textContent !== v) el.textContent = v; }
   _setInput(el, v) { const s = String(v); if (el && el.value !== s) el.value = s; }
   _cls(el, cls, on) { if (el) el.classList.toggle(cls, !!on); }
+  _esc(v) { return String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+  // innerHTML twin of _txt for the one cell that carries markup (the compact
+  // "when" line). dataset.v is the change guard — comparing innerHTML back is
+  // unreliable once the browser has normalised it.
+  _html(el, v) { if (el && el.dataset.v !== v) { el.dataset.v = v; el.innerHTML = v; } }
   _isEditingGroup(group) {
     const ae = this.shadowRoot.activeElement;
     if (!ae || ae.tagName !== "INPUT") return false;
@@ -830,18 +845,16 @@ class SonoffValveCard extends HTMLElement {
   // One run-list row. Same markup and column order as the Tuya irrigation card,
   // with an extra .hl-ch cell for the line that ran.
   _histRowHtml(r) {
-    const esc = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     // start is null on a run recovered across a restart — end still places it.
-    const when = this._smartDateTime(new Date(r.start || r.end));
+    const when = this._whenHtml(new Date(r.start || r.end));
     const dur = (r.duration_s != null) ? this._fd(r.duration_s) : "";
     const vol = (r.liters != null) ? `${this._fmtVolShortNum(r.liters)} L` : "—";
-    return `<div class="hl-row" title="${esc(this._outcomeLabel(r))}">`
+    return `<div class="hl-row" title="${this._esc(this._outcomeLabel(r))}">`
       + `<span class="hl-dot ${this._outcomeClass(r)}"></span>`
-      + `<span class="hl-when">${esc(when)}</span>`
-      + `<span class="hl-ch">${esc(this._chName(r._ch))}</span>`
-      + `<span class="hl-dur">${esc(dur)}</span>`
-      + `<span class="hl-vol">${esc(vol)}</span>`
+      + `<span class="hl-when">${when}</span>`
+      + `<span class="hl-ch">${this._esc(this._chName(r._ch))}</span>`
+      + `<span class="hl-dur">${this._esc(dur)}</span>`
+      + `<span class="hl-vol">${this._esc(vol)}</span>`
       + `</div>`;
   }
 
@@ -878,29 +891,45 @@ class SonoffValveCard extends HTMLElement {
     return n.toLocaleString(_numLocale(this._hass), { minimumFractionDigits: 0, maximumFractionDigits: 1 });
   }
   _p2(n) { return String(Math.round(n)).padStart(2, "0"); }
-  // Tabular date + start time for the run-list rows. Deliberately NOT _smartDate:
-  // that one's prose form ("Lunedì 24 alle 06:30") is right for the single
-  // prominent compact line but makes a scrollable list ragged, since the
-  // current week's rows come out ~2x wider than the rest — and here they also
-  // have to share the row with the line name. Kept identical in the Tuya card.
-  //   today            → "oggi 06:30"
-  //   yesterday        → "ieri 06:30"
-  //   older, same year → "24 ago 06:30"
-  //   previous years   → "24 ago 2024 06:30"
-  _smartDateTime(date) {
-    if (!date || isNaN(date.getTime())) return "";
+  // Date + start time as parts, so a narrow card can drop the date (see
+  // _whenHtml and the @container rule). Kept identical in the other card.
+  //   today            → oggi   ·  —            · 06:30
+  //   yesterday        → ieri   ·  —            · 06:30
+  //   2-6 days ago     → Lunedì ·  24 ago       · 06:30
+  //   older, same year →   —    ·  24 ago       · 06:30
+  //   previous years   →   —    ·  24 ago 2024  · 06:30
+  // The day-count branches are tested BEFORE the year one, so a five-day-old
+  // run either side of New Year reads "Domenica 28 dic 06:30": the year would
+  // be noise on a run that recent.
+  _smartDateParts(date) {
+    if (!date || isNaN(date.getTime())) return null;
     const now = new Date();
     const locale = this._hass?.language || _i18nLang(this._hass);
-    const time = date.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+    const cap = (s) => (s ? s.charAt(0).toLocaleUpperCase(locale) + s.slice(1) : s);
+    const tm = date.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
     // Calendar-day difference, not elapsed hours: 23:50 → 00:10 is "yesterday".
     const dayStart = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
     const days = Math.round((dayStart(now) - dayStart(date)) / 86400000);
-    if (days === 0) return `${_t(this._hass, "today")} ${time}`;
-    if (days === 1) return `${_t(this._hass, "yesterday")} ${time}`;
+    if (days === 0) return { wd: _t(this._hass, "today"), dt: null, tm };
+    if (days === 1) return { wd: _t(this._hass, "yesterday"), dt: null, tm };
+    // Stops at 6: the seventh day back carries today's own weekday name.
+    const wd = (days >= 2 && days <= 6)
+      ? cap(date.toLocaleDateString(locale, { weekday: "long" })) : null;
     const opts = date.getFullYear() === now.getFullYear()
       ? { day: "numeric", month: "short" }
       : { day: "numeric", month: "short", year: "numeric" };
-    return `${date.toLocaleDateString(locale, opts)} ${time}`;
+    return { wd, dt: date.toLocaleDateString(locale, opts), tm };
+  }
+  // The parts as spans. `opt` marks the cell a narrow card may drop, and it is
+  // set ONLY when a weekday is there to stand in for the date — an older row
+  // has no weekday, so it keeps its date at every width rather than being left
+  // with a bare "06:30".
+  _whenHtml(date) {
+    const p = this._smartDateParts(date);
+    if (!p) return "";
+    let out = p.wd ? `<span>${this._esc(p.wd)}</span>` : "";
+    if (p.dt) out += `<span${p.wd ? ' class="opt"' : ""}>${this._esc(p.dt)}</span>`;
+    return out + `<span>${this._esc(p.tm)}</span>`;
   }
   // "17m 13s · 100 L" for the compact row. The "Litri:" label is gone: the unit
   // already says it, and this line has to survive a large mobile font on one
@@ -909,34 +938,6 @@ class SonoffValveCard extends HTMLElement {
     const d = (dur != null && dur > 0) ? this._fd(dur) : "";
     const v = (vol != null) ? `${this._fmtVolShortNum(vol)} L` : "";
     return d && v ? `${d} · ${v}` : (d || v);
-  }
-  // Smart absolute date for the compact "last" line — same formatter (and
-  // same wording) as the Tuya irrigation card, so the two cards read alike
-  // when stacked in one view:
-  //   today            → "oggi 10:35"
-  //   this week        → "Martedì 12 alle 10:35"
-  //   older, same year → "12 mar"
-  //   previous years   → "12 mar 2024"
-  _smartDate(date) {
-    if (!date || isNaN(date.getTime())) return null;
-    const now = new Date();
-    const locale = this._hass?.language || _i18nLang(this._hass);
-    const cap = (s) => (s ? s.charAt(0).toLocaleUpperCase(locale) + s.slice(1) : s);
-    const time = date.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
-    const sameDay =
-      date.getFullYear() === now.getFullYear() &&
-      date.getMonth() === now.getMonth() &&
-      date.getDate() === now.getDate();
-    if (sameDay) return `${_t(this._hass, "today")} ${time}`;
-    const diffDays = (now.getTime() - date.getTime()) / 86400000;
-    if (diffDays >= 0 && diffDays < 7) {
-      const wd = cap(date.toLocaleDateString(locale, { weekday: "long" }));
-      return `${wd} ${date.getDate()}${_t(this._hass, "atSep")}${time}`;
-    }
-    if (date.getFullYear() === now.getFullYear()) {
-      return cap(date.toLocaleDateString(locale, { day: "numeric", month: "short" }));
-    }
-    return cap(date.toLocaleDateString(locale, { day: "numeric", month: "short", year: "numeric" }));
   }
   // h:mm:ss above one hour: duration runs go up to 719 minutes, and a raw
   // "719:00" reads as broken formatting rather than minutes:seconds.
@@ -1000,9 +1001,14 @@ ha-card{overflow:hidden}
 .chl{font-size:9px;color:var(--th);max-width:56px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center}
 .pw{height:3px;border-radius:2px;background:var(--bd);margin-top:6px;overflow:hidden;opacity:0;transition:opacity .2s}.pw.vi{opacity:1}
 .pb{height:100%;border-radius:2px;background:var(--accent);transition:width .3s linear}
+/* The history section is the query container for the collapsing date. It sits
+   on this wrapper and not on :host or ha-card because a plain block's inline
+   size is always parent-determined, so inline-size containment can never
+   collapse it — a card dropped into a shrink-to-fit context could. */
+.hsec{container-type:inline-size}
 .hist-compact{display:flex;align-items:center;gap:8px;padding:2px 0;min-height:24px}
 .hist-compact-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--th);flex-shrink:0}
-.hist-when{flex:1;min-width:0;font-size:12px;color:var(--tm);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hist-when{flex:1;min-width:0;display:flex;gap:4px;align-items:baseline;overflow:hidden;font-size:12px;color:var(--tm);font-weight:500;white-space:nowrap}
 .hist-when.none{color:var(--ts);font-weight:400;font-style:italic}
 .hist-sum{font-size:11px;color:var(--tm);font-family:monospace;white-space:nowrap;flex-shrink:0}
 .hist-toggle{background:none;border:none;color:var(--th);cursor:pointer;padding:2px 4px;flex-shrink:0;display:none;line-height:0;transition:transform .2s}
@@ -1020,11 +1026,19 @@ ha-card{overflow:hidden}
 .hl-dot.ok{background:var(--accent)}
 .hl-dot.warn{background:#eab308}
 .hl-dot.neutral{background:var(--th)}
-.hl-when{font-size:11px;color:var(--tm);font-family:monospace;white-space:nowrap;flex-shrink:0}
+.hl-when{display:flex;gap:1ch;font-size:11px;color:var(--tm);font-family:monospace;white-space:nowrap;flex-shrink:0}
 .hl-ch{flex:1;min-width:0;font-size:11px;color:var(--ts);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hl-dur{margin-left:auto;font-size:11px;color:var(--ts);font-family:monospace;white-space:nowrap;min-width:56px;text-align:right}
 .hl-vol{font-size:11px;color:var(--tm);font-family:monospace;white-space:nowrap;min-width:46px;text-align:right}
 .hl-empty{font-size:12px;color:var(--th);text-align:center;padding:10px;font-style:italic}
+/* Mobile-first: the date hides by default and comes back when the section is
+   wide enough for weekday + date + time. Failing closed is the safe direction
+   — the short form never overflows. 360px is the one hand-tuned constant:
+   the widest Sonoff row ("Mercoledì 24 ago 05:30" + line + duration +
+   litres) needs ~338px of section width, and the section is the card minus
+   .cb's 32px of horizontal padding. */
+.hl-when>.opt,.hist-when>.opt{display:none}
+@container (min-width:360px){.hl-when>.opt,.hist-when>.opt{display:inline}}
 input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 input[type=number]{-moz-appearance:textfield}
 .intg-missing{background:rgba(226,85,85,.12);color:var(--danger);border:1px solid rgba(226,85,85,.3);border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:12px;text-align:center;display:none}
@@ -1083,7 +1097,7 @@ input[type=number]{-moz-appearance:textfield}
       <div class="start-ov" id="start-ov"><span id="start-ov-txt"></span></div>
     </div>
     <div class="dv" id="divider"></div>
-    <div class="sc" style="margin-bottom:0">
+    <div class="sc hsec" style="margin-bottom:0">
       <div class="hist-compact" id="last-row">
         <span class="hist-compact-label">${t("last")}</span>
         <span class="hist-when" id="ls-when"></span>
@@ -1242,12 +1256,12 @@ input[type=number]{-moz-appearance:textfield}
       if (ls) {
         // The run log knows when; the session_* fallback doesn't, and the
         // summary cell then carries the duration on its own.
-        const when = this._smartDate(ls.when);
-        this._txt(el.lsWhen, when || `${t("duration")}: ${this._fd(ls.dur)}`);
+        const when = this._whenHtml(ls.when);
+        this._html(el.lsWhen, when || this._esc(`${t("duration")}: ${this._fd(ls.dur)}`));
         this._cls(el.lsWhen, "none", false);
         this._txt(el.lsSum, when ? this._summaryText(ls.dur, ls.vol) : "");
       } else {
-        this._txt(el.lsWhen, ": " + t("none"));
+        this._html(el.lsWhen, this._esc(": " + t("none")));
         this._cls(el.lsWhen, "none", true);
         this._txt(el.lsSum, "");
       }
@@ -1307,4 +1321,4 @@ window.customCards = window.customCards || [];
   const pickerDesc = (I18N[lang] || I18N.en).cardDesc;
   window.customCards.push({ type: "sonoff-valve-card", name: pickerName, description: pickerDesc, preview: true });
 })();
-console.info("%c SONOFF-VALVE-CARD %c v0.7.0 ", "color:white;background:#2ecc8b;font-weight:bold;padding:2px 6px;border-radius:4px 0 0 4px;", "color:#2ecc8b;background:#1a1c2e;font-weight:bold;padding:2px 6px;border-radius:0 4px 4px 0;");
+console.info("%c SONOFF-VALVE-CARD %c v0.7.1 ", "color:white;background:#2ecc8b;font-weight:bold;padding:2px 6px;border-radius:4px 0 0 4px;", "color:#2ecc8b;background:#1a1c2e;font-weight:bold;padding:2px 6px;border-radius:0 4px 4px 0;");
