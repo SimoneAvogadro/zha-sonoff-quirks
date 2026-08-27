@@ -150,11 +150,14 @@ line**. The running line's button turns into a red stop. Progress comes from
 the `0x501F` session feed (device truth: survives a browser refresh and shows
 automation-started runs too).
 
-When idle, the "last session" row shows the previous run and — from 0.5.0 —
-a chevron that expands the **run history**: the recent runs of both lines
-merged (date, line, duration, litres), fed by the integration's history
-sensors. Configs saved with 0.4.0 pick the history entities up automatically
-at runtime; no need to reopen the editor.
+When idle, the "last session" row shows the previous run (start time, duration,
+litres) and — from 0.5.0 — a chevron that expands the **run history**: a
+scrollable list of the recent runs of both lines merged (start time, line,
+duration, litres and an outcome dot), fed by the integration's history sensors.
+From 0.7.0 the list matches the Tuya irrigation card in
+[tuya-cards-for-ha](https://github.com/simoneavogadro/tuya-cards-for-ha) row for
+row, bar the line column. Configs saved with 0.4.0 pick the history entities up
+automatically at runtime; no need to reopen the editor.
 
 Add it from the dashboard card picker (*Sonoff Valve (Irrigation)*): pick the
 device in the visual editor and it resolves all entities by `unique_id`,

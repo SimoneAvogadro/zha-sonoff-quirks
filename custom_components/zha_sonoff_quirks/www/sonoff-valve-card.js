@@ -2,6 +2,12 @@
  * Sonoff Valve Card (Irrigation) for Home Assistant
  * Custom Lovelace card for the SONOFF SWV-ZF2 dual-channel Zigbee water valve,
  * paired with the zha_sonoff_quirks integration (quirk + irrigation services).
+ * v0.7.0 — Run list unified with the Tuya irrigation card: scrollable (no more
+ *          8-row cap), rows on a black background separated by a hairline, the
+ *          start time in a fixed-width tabular column (_smartDateTime, "24 ago
+ *          06:30" instead of "24/08 05:50"), and an outcome dot fed by the run
+ *          log's `reason`. The compact row now shows duration next to liters.
+ *          New i18n: yesterday + the oc_* outcome labels.
  * v0.5.2 — Idle row aligned with the Tuya irrigation card: label shortened to
  *          "Ultima" (fits a large mobile font on one line) and the value is
  *          now the start time of the last run, taken from the run log, with
@@ -41,8 +47,9 @@ const I18N = {
     liters: "Litri", time: "Tempo", remaining: "rimanente",
     line1: "Linea 1", line2: "Linea 2",
     last: "Ultima", duration: "Durata", none: "nessuna",
-    atSep: " alle ", today: "oggi",
+    atSep: " alle ", today: "oggi", yesterday: "ieri",
     history: "Storico irrigazioni",
+    oc_completed: "Completata", oc_stopped: "Interrotta", oc_timeout: "Timeout", oc_stalled: "Nessun flusso", oc_shutdown: "Riavvio", oc_auto: "Auto", oc_manual: "Manuale",
     configError: "Seleziona una valvola Sonoff nella configurazione",
     defaultName: "Irrigazione",
     integrationMissing: "Installa l'integrazione Sonoff ZHA per abilitare il controllo",
@@ -64,8 +71,9 @@ const I18N = {
     liters: "Liters", time: "Time", remaining: "remaining",
     line1: "Line 1", line2: "Line 2",
     last: "Last", duration: "Duration", none: "none",
-    atSep: " at ", today: "today",
+    atSep: " at ", today: "today", yesterday: "yesterday",
     history: "Irrigation history",
+    oc_completed: "Completed", oc_stopped: "Stopped", oc_timeout: "Timeout", oc_stalled: "No flow", oc_shutdown: "Restart", oc_auto: "Auto", oc_manual: "Manual",
     configError: "Select a Sonoff valve in the configuration",
     defaultName: "Irrigation",
     integrationMissing: "Install the Sonoff ZHA integration to enable control",
@@ -87,8 +95,9 @@ const I18N = {
     liters: "升量", time: "时长", remaining: "剩余",
     line1: "线路 1", line2: "线路 2",
     last: "上次", duration: "持续时间", none: "无",
-    atSep: " ", today: "今天",
+    atSep: " ", today: "今天", yesterday: "昨天",
     history: "灌溉历史",
+    oc_completed: "已完成", oc_stopped: "已停止", oc_timeout: "超时", oc_stalled: "无水流", oc_shutdown: "重启", oc_auto: "自动", oc_manual: "手动",
     configError: "请在配置中选择 Sonoff 水阀",
     defaultName: "灌溉",
     integrationMissing: "请安装 Sonoff ZHA 集成以启用控制",
@@ -796,25 +805,43 @@ class SonoffValveCard extends HTMLElement {
         if (r && r.end) out.push({ ...r, _ch: ch });
       }
     }
-    out.sort((a, b) => new Date(b.end) - new Date(a.end));
-    return out.slice(0, 8);
+    // Ordered by start — the field the rows show. Runs on one channel can't
+    // overlap, but two channels running at once would interleave by end.
+    out.sort((a, b) => new Date(b.start || b.end) - new Date(a.start || a.end));
+    // The list scrolls, so the only cap is what the sensors publish
+    // (RUNS_ATTR_CAP per channel); this bounds the merged pair to one screenful
+    // of scrolling and matches the Tuya card's feed.
+    return out.slice(0, 25);
   }
 
+  // Why the run ended, from the run log's `reason`. Same mapping (and same
+  // dot colours) as the Tuya irrigation card.
+  _outcomeClass(r) {
+    const reason = r && r.reason;
+    if (reason === "completed") return "ok";
+    if (reason === "timeout" || reason === "stalled" || reason === "shutdown") return "warn";
+    return "neutral";
+  }
+  _outcomeLabel(r) {
+    const map = { completed: "oc_completed", stopped: "oc_stopped", timeout: "oc_timeout", stalled: "oc_stalled", shutdown: "oc_shutdown", auto_off: "oc_auto", manual_off: "oc_manual" };
+    return _t(this._hass, map[r && r.reason] || "oc_completed");
+  }
+
+  // One run-list row. Same markup and column order as the Tuya irrigation card,
+  // with an extra .hl-ch cell for the line that ran.
   _histRowHtml(r) {
-    const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    const esc = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;")
       .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-    const loc = _numLocale(this._hass);
-    const d = new Date(r.end);
-    const when = isNaN(d.getTime()) ? "—"
-      : d.toLocaleDateString(loc, { day: "2-digit", month: "2-digit" })
-        + " " + d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });
-    const liters = (r.liters === null || r.liters === undefined) ? "—"
-      : `${this._fmtVolShortNum(r.liters)} L`;
-    return `<div class="hr-row">`
-      + `<span class="hr-when">${esc(when)}</span>`
-      + `<span class="hr-ch">${esc(this._chName(r._ch))}</span>`
-      + `<span class="hr-dur">${esc(this._fd(r.duration_s || 0))}</span>`
-      + `<span class="hr-l">${esc(liters)}</span>`
+    // start is null on a run recovered across a restart — end still places it.
+    const when = this._smartDateTime(new Date(r.start || r.end));
+    const dur = (r.duration_s != null) ? this._fd(r.duration_s) : "";
+    const vol = (r.liters != null) ? `${this._fmtVolShortNum(r.liters)} L` : "—";
+    return `<div class="hl-row" title="${esc(this._outcomeLabel(r))}">`
+      + `<span class="hl-dot ${this._outcomeClass(r)}"></span>`
+      + `<span class="hl-when">${esc(when)}</span>`
+      + `<span class="hl-ch">${esc(this._chName(r._ch))}</span>`
+      + `<span class="hl-dur">${esc(dur)}</span>`
+      + `<span class="hl-vol">${esc(vol)}</span>`
       + `</div>`;
   }
 
@@ -851,6 +878,38 @@ class SonoffValveCard extends HTMLElement {
     return n.toLocaleString(_numLocale(this._hass), { minimumFractionDigits: 0, maximumFractionDigits: 1 });
   }
   _p2(n) { return String(Math.round(n)).padStart(2, "0"); }
+  // Tabular date + start time for the run-list rows. Deliberately NOT _smartDate:
+  // that one's prose form ("Lunedì 24 alle 06:30") is right for the single
+  // prominent compact line but makes a scrollable list ragged, since the
+  // current week's rows come out ~2x wider than the rest — and here they also
+  // have to share the row with the line name. Kept identical in the Tuya card.
+  //   today            → "oggi 06:30"
+  //   yesterday        → "ieri 06:30"
+  //   older, same year → "24 ago 06:30"
+  //   previous years   → "24 ago 2024 06:30"
+  _smartDateTime(date) {
+    if (!date || isNaN(date.getTime())) return "";
+    const now = new Date();
+    const locale = this._hass?.language || _i18nLang(this._hass);
+    const time = date.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+    // Calendar-day difference, not elapsed hours: 23:50 → 00:10 is "yesterday".
+    const dayStart = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const days = Math.round((dayStart(now) - dayStart(date)) / 86400000);
+    if (days === 0) return `${_t(this._hass, "today")} ${time}`;
+    if (days === 1) return `${_t(this._hass, "yesterday")} ${time}`;
+    const opts = date.getFullYear() === now.getFullYear()
+      ? { day: "numeric", month: "short" }
+      : { day: "numeric", month: "short", year: "numeric" };
+    return `${date.toLocaleDateString(locale, opts)} ${time}`;
+  }
+  // "17m 13s · 100 L" for the compact row. The "Litri:" label is gone: the unit
+  // already says it, and this line has to survive a large mobile font on one
+  // line. Either half may be missing (a duration run records no liters).
+  _summaryText(dur, vol) {
+    const d = (dur != null && dur > 0) ? this._fd(dur) : "";
+    const v = (vol != null) ? `${this._fmtVolShortNum(vol)} L` : "";
+    return d && v ? `${d} · ${v}` : (d || v);
+  }
   // Smart absolute date for the compact "last" line — same formatter (and
   // same wording) as the Tuya irrigation card, so the two cards read alike
   // when stacked in one view:
@@ -905,7 +964,7 @@ class SonoffValveCard extends HTMLElement {
     const hasBatt = !!this._entities.battery;
     this.shadowRoot.innerHTML = `
 <style>
-:host{--accent:#2ecc8b;--accent-dim:rgba(46,204,139,.12);--accent-hover:#27b67a;--blue:#4a90d9;--blue-dim:rgba(74,144,217,.12);--blue-text:#6aabf0;--danger:#e25555;--tm:var(--primary-text-color,#e8e8f0);--ts:var(--secondary-text-color,#8b8da5);--th:var(--disabled-text-color,#5c5e76);--bd:var(--divider-color,rgba(255,255,255,.06))}
+:host{--accent:#2ecc8b;--accent-dim:rgba(46,204,139,.12);--accent-hover:#27b67a;--blue:#4a90d9;--blue-dim:rgba(74,144,217,.12);--blue-text:#6aabf0;--danger:#e25555;--tm:var(--primary-text-color,#e8e8f0);--ts:var(--secondary-text-color,#8b8da5);--th:var(--disabled-text-color,#5c5e76);--bd:var(--divider-color,rgba(255,255,255,.06));--sep:var(--bd)}
 ha-card{overflow:hidden}
 .ch{display:flex;align-items:center;justify-content:space-between;padding:12px 16px 6px}
 .hl{display:flex;align-items:center;gap:10px}
@@ -945,18 +1004,27 @@ ha-card{overflow:hidden}
 .hist-compact-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--th);flex-shrink:0}
 .hist-when{flex:1;min-width:0;font-size:12px;color:var(--tm);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hist-when.none{color:var(--ts);font-weight:400;font-style:italic}
-.hist-vol{font-size:12px;color:var(--tm);font-weight:500;white-space:nowrap;flex-shrink:0}
-.hist-vol-label{color:var(--th);font-weight:400}
+.hist-sum{font-size:11px;color:var(--tm);font-family:monospace;white-space:nowrap;flex-shrink:0}
 .hist-toggle{background:none;border:none;color:var(--th);cursor:pointer;padding:2px 4px;flex-shrink:0;display:none;line-height:0;transition:transform .2s}
 .hist-toggle.open{transform:rotate(90deg)}
 .hist-toggle svg{display:block}
-.hist-list{margin-top:6px;border-top:1px solid var(--bd);padding-top:6px;display:none;flex-direction:column;gap:4px}
+.hist-list{margin-top:6px;max-height:200px;overflow-y:auto;display:none;flex-direction:column}
 .hist-list.vi{display:flex}
-.hr-row{display:flex;align-items:center;gap:10px;font-size:11px;color:var(--ts);font-family:monospace}
-.hr-when{color:var(--tm);flex-shrink:0}
-.hr-ch{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:90px}
-.hr-dur{margin-left:auto;flex-shrink:0}
-.hr-l{color:var(--tm);min-width:48px;text-align:right;flex-shrink:0}
+.hl-row{display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid var(--sep)}
+.hl-row:last-child{border-bottom:none}
+/* Hairline derived from the secondary text colour: --divider-color alone is
+   ~12% white in HA's dark theme and all but vanishes as a 1px rule on black.
+   Guarded so browsers without color-mix keep the (fainter) --bd fallback. */
+@supports (color:color-mix(in srgb,red 50%,transparent)){.hl-row{border-bottom-color:color-mix(in srgb,var(--ts) 28%,transparent)}}
+.hl-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;background:var(--th)}
+.hl-dot.ok{background:var(--accent)}
+.hl-dot.warn{background:#eab308}
+.hl-dot.neutral{background:var(--th)}
+.hl-when{font-size:11px;color:var(--tm);font-family:monospace;white-space:nowrap;flex-shrink:0}
+.hl-ch{flex:1;min-width:0;font-size:11px;color:var(--ts);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hl-dur{margin-left:auto;font-size:11px;color:var(--ts);font-family:monospace;white-space:nowrap;min-width:56px;text-align:right}
+.hl-vol{font-size:11px;color:var(--tm);font-family:monospace;white-space:nowrap;min-width:46px;text-align:right}
+.hl-empty{font-size:12px;color:var(--th);text-align:center;padding:10px;font-style:italic}
 input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 input[type=number]{-moz-appearance:textfield}
 .intg-missing{background:rgba(226,85,85,.12);color:var(--danger);border:1px solid rgba(226,85,85,.3);border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:12px;text-align:center;display:none}
@@ -1019,7 +1087,7 @@ input[type=number]{-moz-appearance:textfield}
       <div class="hist-compact" id="last-row">
         <span class="hist-compact-label">${t("last")}</span>
         <span class="hist-when" id="ls-when"></span>
-        <span class="hist-vol" id="ls-vol" style="display:none"><span class="hist-vol-label">${t("liters")}:</span> <span id="ls-vol-val"></span></span>
+        <span class="hist-sum" id="ls-sum"></span>
         <button class="hist-toggle" id="hist-toggle" title="${t("history")}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
       </div>
       <div class="hist-list" id="hist-list"></div>
@@ -1049,7 +1117,7 @@ input[type=number]{-moz-appearance:textfield}
       tempoFh: $("tempo-fh"), tempoPw: $("tempo-pw"), tempoBar: $("tempo-bar"),
       startOv: $("start-ov"), startOvTxt: $("start-ov-txt"),
       divider: $("divider"),
-      lastRow: $("last-row"), lsWhen: $("ls-when"), lsVol: $("ls-vol"), lsVolVal: $("ls-vol-val"),
+      lastRow: $("last-row"), lsWhen: $("ls-when"), lsSum: $("ls-sum"),
       histToggle: $("hist-toggle"), histList: $("hist-list"),
     };
   }
@@ -1172,17 +1240,16 @@ input[type=number]{-moz-appearance:textfield}
     if (el.lastRow) el.lastRow.style.display = showRow ? "flex" : "none";
     if (showRow) {
       if (ls) {
-        // Start time when the run log knows it, duration otherwise.
+        // The run log knows when; the session_* fallback doesn't, and the
+        // summary cell then carries the duration on its own.
         const when = this._smartDate(ls.when);
         this._txt(el.lsWhen, when || `${t("duration")}: ${this._fd(ls.dur)}`);
         this._cls(el.lsWhen, "none", false);
-        const hasVol = ls.vol !== null && ls.vol !== undefined;
-        if (el.lsVol) el.lsVol.style.display = hasVol ? "inline" : "none";
-        if (hasVol) this._txt(el.lsVolVal, this._fmtVolShortNum(ls.vol));
+        this._txt(el.lsSum, when ? this._summaryText(ls.dur, ls.vol) : "");
       } else {
         this._txt(el.lsWhen, ": " + t("none"));
         this._cls(el.lsWhen, "none", true);
-        if (el.lsVol) el.lsVol.style.display = "none";
+        this._txt(el.lsSum, "");
       }
     }
 
@@ -1240,4 +1307,4 @@ window.customCards = window.customCards || [];
   const pickerDesc = (I18N[lang] || I18N.en).cardDesc;
   window.customCards.push({ type: "sonoff-valve-card", name: pickerName, description: pickerDesc, preview: true });
 })();
-console.info("%c SONOFF-VALVE-CARD %c v0.5.2 ", "color:white;background:#2ecc8b;font-weight:bold;padding:2px 6px;border-radius:4px 0 0 4px;", "color:#2ecc8b;background:#1a1c2e;font-weight:bold;padding:2px 6px;border-radius:0 4px 4px 0;");
+console.info("%c SONOFF-VALVE-CARD %c v0.7.0 ", "color:white;background:#2ecc8b;font-weight:bold;padding:2px 6px;border-radius:4px 0 0 4px;", "color:#2ecc8b;background:#1a1c2e;font-weight:bold;padding:2px 6px;border-radius:0 4px 4px 0;");
