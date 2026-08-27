@@ -10,6 +10,16 @@
       "already_configured": "Sonoff ZHA è già configurato."
     }
   },
+  "entity": {
+    "text": {
+      "line_name_a": {
+        "name": "Nome linea A"
+      },
+      "line_name_b": {
+        "name": "Nome linea B"
+      }
+    }
+  },
   "selector": {
     "channel": {
       "options": {

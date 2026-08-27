@@ -24,6 +24,8 @@ _spec = importlib.util.spec_from_file_location("swv_const", _ROOT / "const.py")
 _module = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_module)
 CHANNEL_LABELS = _module.CHANNEL_LABELS
+CHANNELS = _module.CHANNELS
+line_name_uid_prefix = _module.line_name_uid_prefix
 
 CARD = (_ROOT / "www/sonoff-valve-card.js").read_text(encoding="utf-8")
 
@@ -57,3 +59,42 @@ def test_ogni_id_del_template_ha_un_riferimento_dom():
             f"l'id {element_id} esiste nel template ma non e' in this._el: "
             "il render non lo aggiornerebbe mai"
         )
+
+
+# ── Entita' "Nome linea": prefisso unique_id condiviso con text.py ──
+#
+# La card cerca queste entita' per prefisso in UID_PREFIX_RULES; l'integrazione
+# lo costruisce con line_name_uid_prefix(). Se i due divergono la card non le
+# trova e ricade silenziosamente su "Linea A": nessun errore, solo il nome che
+# non compare. Da qui il test.
+def _uid_prefix_rules() -> dict:
+    """Le righe di UID_PREFIX_RULES della card, come {chiave: (dominio, prefisso)}."""
+    block = re.search(r"const UID_PREFIX_RULES = \[(.*?)\];", CARD, re.S)
+    assert block, "UID_PREFIX_RULES non trovata nella card"
+    rows = re.findall(r'\["([^"]+)",\s*"([^"]+)",\s*"([^"]+)"\]', block.group(1))
+    return {key: (domain, prefix) for key, domain, prefix in rows}
+
+
+@pytest.mark.parametrize("channel", ["1", "2"])
+def test_la_card_cerca_i_nomi_linea_col_prefisso_dell_integrazione(channel: str):
+    rules = _uid_prefix_rules()
+    key = f"line_name_{channel}"
+    assert key in rules, f"{key} manca da UID_PREFIX_RULES: la card non lo risolverebbe"
+    domain, prefix = rules[key]
+    assert domain == "text", f"{key} risolto nel dominio {domain!r}, atteso 'text'"
+    assert prefix == line_name_uid_prefix(channel)
+
+
+@pytest.mark.parametrize("channel", ["1", "2"])
+def test_i_nomi_linea_sono_chiavi_opzionali(channel: str):
+    """Un'integrazione piu' vecchia non deve far comparire il banner di config."""
+    key = f"line_name_{channel}"
+    for name in ("ENTITY_KEYS", "OPTIONAL_KEYS"):
+        block = re.search(rf"const {name} = \[(.*?)\];", CARD, re.S)
+        assert block, f"{name} non trovata nella card"
+        assert f'"{key}"' in block.group(1), f"{key} manca da {name}"
+    runtime = re.search(r"const RUNTIME_KEYS = \[(.*?)\];", CARD, re.S)
+    assert f'"{key}"' not in runtime.group(1), (
+        f"{key} e' in RUNTIME_KEYS: la sua assenza farebbe comparire il banner "
+        "di configurazione su ogni card collegata a un'integrazione precedente"
+    )

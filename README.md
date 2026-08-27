@@ -26,6 +26,7 @@ on, and **the valve closes by itself** — even if Home Assistant is offline.
 | Fail-safe timeout | number (0–719 min) | 1 | `0x501D` bytes 10–11 |
 | Irrigation history CH1 / CH2 | sensor (timestamp + `runs` attribute) | — | run log (integration) |
 | Irrigation water total CH1 / CH2 | sensor (litres, `total_increasing`) | — | run log (integration) |
+| Line name A / B | text (config) | — | entry options (integration) |
 
 > **The configuration is global, not per channel.** `0x501D` only exists on
 > endpoint 1 — verified on the device, see [TODO.md](TODO.md) #2. The four
@@ -149,6 +150,34 @@ the channel switch. Entities are resolved from the registry by `unique_id`, so
 renaming entities does not break the services. Starting a channel that is
 already irrigating raises an error instead of silently retargeting the run.
 
+## Naming the two lines
+
+The valve's outlets are silk-screened **A** and **B**, and the UI calls them
+that. Since 0.9.0 you can give each one the name you actually use for it —
+"33 davanti", "33 dietro" — from the **device page → Configuration → Line name
+A / Line name B**. The name is stored on the device (in the config entry's
+options), so every card showing that valve picks it up: name it once, not once
+per dashboard.
+
+The card's own optional *Line A name* / *Line B name* fields still exist and
+**win when set** — use them when one dashboard wants a shorter label than the
+device-level name. Order of precedence, most specific first:
+
+1. `name_1` / `name_2` in that card's config
+2. the *Line name A / B* entity on the device
+3. `Line A` / `Line B`
+
+Naming a line never hides its letter: with a name set, the card shows the
+letter above the start button and the name below it, and writes `A · 33
+davanti` in the history rows, the pending overlay and the button tooltip. That
+keeps the pairing in front of you, which is what you need when the automation
+editor asks for *Line A*.
+
+Two caveats. The name is **not** the switch entity's name, so the logbook, the
+history and the voice assistant keep showing whatever the ZHA switch entities
+are called — rename those too if you want the name everywhere. And the names
+live in the config entry: removing the integration takes them with it.
+
 ## Lovelace card
 
 The integration ships and auto-registers `sonoff-valve-card` — same look and
@@ -174,12 +203,10 @@ lines. If the card does not appear in the picker, hard-refresh the browser
 after the first restart.
 
 From 0.8.0 the lines are labelled **A** and **B** — the letters printed on the
-valve — instead of 1 and 2. Naming a line in the editor (`name_1` / `name_2`)
-does not hide its letter: the letter moves above the start button and the name
-sits below it, and the history rows, the pending overlay and the button tooltip
-read `A · 33 davanti`. That keeps the letter ↔ name pairing in front of you,
-which is what you need when the automation editor asks you for *Line A* or
-*Line B*. With no custom name set, a line simply reads `Line A` as before.
+valve — instead of 1 and 2, and from 0.9.0 they take their name from the
+device; see [Naming the two lines](#naming-the-two-lines) above. A card saved
+before 0.9.0 adopts the line-name entities at runtime, so there is no need to
+reopen its editor.
 
 ## Usage: autonomous irrigation
 

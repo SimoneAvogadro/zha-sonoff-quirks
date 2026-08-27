@@ -2,6 +2,12 @@
  * Sonoff Valve Card (Irrigation) for Home Assistant
  * Custom Lovelace card for the SONOFF SWV-ZF2 dual-channel Zigbee water valve,
  * paired with the zha_sonoff_quirks integration (quirk + irrigation services).
+ * v0.9.0 — The line names move to the device. The integration now owns two
+ *          "Line name" text entities (device page → Configuration); the card
+ *          reads them, so a valve shown on three dashboards is named once
+ *          instead of three times. The card's own name_1/name_2 fields stay
+ *          as a per-card override and win when set. Cards saved before this
+ *          version pick the entities up at runtime, no editor visit needed.
  * v0.8.0 — The two outlets are now called A and B, the letters printed on
  *          the valve, instead of 1 and 2 (display only — the channel value
  *          stays "1"/"2" in the config, the services and every id). When a
@@ -77,6 +83,7 @@ const I18N = {
     editorName: "Nome (opzionale)", editorNamePh: "Nome personalizzato",
     editorNameHint: "Lascia vuoto per usare il nome del dispositivo",
     editorName1: "Nome Linea A (opzionale)", editorName2: "Nome Linea B (opzionale)",
+    editorNameLineHint: "Solo per questa card. Lascia vuoto per usare il nome impostato sul dispositivo (Nome linea A / B).",
     editorResolveFail: "Registro entità non leggibile — risoluzione euristica sugli entity_id",
     editorUnresolved: "Entità non risolte:",
     cardDesc: "Card per la valvola SONOFF SWV-ZF2 a due linee con avvio a litri o a tempo",
@@ -101,6 +108,7 @@ const I18N = {
     editorName: "Name (optional)", editorNamePh: "Custom name",
     editorNameHint: "Leave empty to use device name",
     editorName1: "Line A name (optional)", editorName2: "Line B name (optional)",
+    editorNameLineHint: "This card only. Leave empty to use the name set on the device (Line name A / B).",
     editorResolveFail: "Entity registry not readable — falling back to entity_id heuristics",
     editorUnresolved: "Unresolved entities:",
     cardDesc: "Card for the dual-line SONOFF SWV-ZF2 valve with liters or time based runs",
@@ -125,6 +133,7 @@ const I18N = {
     editorName: "名称（可选）", editorNamePh: "自定义名称",
     editorNameHint: "留空使用设备名称",
     editorName1: "线路 A 名称（可选）", editorName2: "线路 B 名称（可选）",
+    editorNameLineHint: "仅对此卡片生效。留空则使用设备上设置的名称（线路 A / B 名称）。",
     editorResolveFail: "无法读取实体注册表 — 回退到 entity_id 启发式匹配",
     editorUnresolved: "未解析的实体：",
     cardDesc: "适用于双线路 SONOFF SWV-ZF2 水阀的卡片，支持按升量或时长灌溉",
@@ -146,10 +155,11 @@ const COMPAT_MODELS = ["SWV-ZF2", "SWV-ZF2U", "SWV-ZF2E"];
 // Every key the editor tries to resolve (battery is optional, resolved separately).
 const ENTITY_KEYS = ["mode", "duration", "volume", "fail_safe", "irrigating",
   "session_volume", "session_elapsed", "session_target", "switch_1", "switch_2",
-  "history_1", "history_2"];
+  "history_1", "history_2", "line_name_1", "line_name_2"];
 // Optional keys: resolved when present but never worth a warning banner — the
-// history sensors only exist from integration 0.5.0 on.
-const OPTIONAL_KEYS = ["history_1", "history_2"];
+// history sensors only exist from integration 0.5.0 on, the line-name entities
+// from 0.9.0.
+const OPTIONAL_KEYS = ["history_1", "history_2", "line_name_1", "line_name_2"];
 // Keys the card runtime actually reads — missing ones are surfaced in the config banner.
 const RUNTIME_KEYS = ["mode", "duration", "volume", "session_volume",
   "session_elapsed", "session_target", "switch_1", "switch_2"];
@@ -169,9 +179,15 @@ const UID_RULES = [
 // The integration's own history sensors embed the channel FIRST in their
 // unique_id ("zha_sonoff_quirks_history_ch1_<switch entity_id>"), so they are
 // matched by PREFIX, unlike the quirk entities above.
+// The line-name entities deliberately have NO entity_id fallback rule below:
+// their name is translated, so the generated entity_id is not predictable from
+// here. They resolve through the registry or not at all — and not at all just
+// means the card falls back to "Linea A", which is harmless.
 const UID_PREFIX_RULES = [
-  ["history_1", "sensor", "zha_sonoff_quirks_history_ch1"],
-  ["history_2", "sensor", "zha_sonoff_quirks_history_ch2"],
+  ["history_1",   "sensor", "zha_sonoff_quirks_history_ch1"],
+  ["history_2",   "sensor", "zha_sonoff_quirks_history_ch2"],
+  ["line_name_1", "text",   "zha_sonoff_quirks_line_name_ch1"],
+  ["line_name_2", "text",   "zha_sonoff_quirks_line_name_ch2"],
 ];
 // entity_id-suffix fallback used only when the registry WS API is unavailable.
 const EID_RULES = [
@@ -247,6 +263,7 @@ select:focus,input:focus{border-color:#4a90d9}
   <div class="row">
     <label>${t("editorName2")}</label>
     <input type="text" id="n2" placeholder="${t("line2")}">
+    <div class="hint">${t("editorNameLineHint")}</div>
   </div>
 </div>`;
     const r = this.shadowRoot;
@@ -501,7 +518,7 @@ class SonoffValveCard extends HTMLElement {
     // Run-history state: panel open flag, render key (skip innerHTML churn on
     // every hass push), throttle stamp for the lazy entity resolution.
     this._histOpen = false; this._histKey = ""; this._histResolveAt = 0;
-    this._histWsTried = false;
+    this._prefixWsTried = false;
     this._cfgProblems = []; this._cfgFatal = true;
     this._domCreated = false;
     this._el = {};
@@ -587,28 +604,33 @@ class SonoffValveCard extends HTMLElement {
       }
     }
     if (changed) this._entities = ents;
-    else if (!this._entities.history_1 && !this._entities.history_2) {
-      this._lazyResolveHistoryWS().catch(() => { /* stay on the suffix path */ });
+    else if (UID_PREFIX_RULES.some(([key]) => !this._entities[key])) {
+      this._lazyResolvePrefixWS().catch(() => { /* stay on the suffix path */ });
     }
   }
 
-  async _lazyResolveHistoryWS() {
-    if (this._histWsTried || typeof this._hass?.callWS !== "function") return;
-    this._histWsTried = true;
+  // Entities the integration owns, matched by unique_id PREFIX. Runs once per
+  // card instance when any of them is missing from the saved config, so a
+  // dashboard saved before an entity existed adopts it without an editor visit.
+  async _lazyResolvePrefixWS() {
+    if (this._prefixWsTried || typeof this._hass?.callWS !== "function") return;
+    this._prefixWsTried = true;
+    const domains = [...new Set(UID_PREFIX_RULES.map(([, dom]) => dom + "."))];
     const all = await this._hass.callWS({ type: "config/entity_registry/list" });
     const cands = (all || []).filter((e) =>
-      e.device_id === this._deviceId && e.entity_id.startsWith("sensor."));
+      e.device_id === this._deviceId && domains.some((d) => e.entity_id.startsWith(d)));
     const ents = { ...this._entities };
     let changed = false;
     for (const c of cands) {
-      if (ents.history_1 && ents.history_2) break;
+      if (UID_PREFIX_RULES.every(([key]) => ents[key])) break;
       let uid = "";
       try {
         const full = await this._hass.callWS({ type: "config/entity_registry/get", entity_id: c.entity_id });
         uid = String(full?.unique_id || "").toLowerCase();
       } catch (_) { continue; }
-      for (const [key, , prefix] of UID_PREFIX_RULES) {
-        if (!ents[key] && uid.startsWith(prefix)) { ents[key] = c.entity_id; changed = true; break; }
+      for (const [key, dom, prefix] of UID_PREFIX_RULES) {
+        if (ents[key] || !c.entity_id.startsWith(dom + ".") || !uid.startsWith(prefix)) continue;
+        ents[key] = c.entity_id; changed = true; break;
       }
     }
     if (changed) { this._entities = ents; this._render(); }
@@ -645,7 +667,16 @@ class SonoffValveCard extends HTMLElement {
   // joined for single-line spots (history rows, pending overlay) and the
   // spelled-out tooltip. With no custom name they all collapse to "Linea A".
   _chId(ch) { return CH_LETTER[ch] || CH_LETTER["1"]; }
-  _chCustom(ch) { return (ch === "2" ? this._name2 : this._name1) || ""; }
+  // Per-card override first (name_1/name_2 in the card config), then the
+  // device-level name the integration stores in its "Line name" text entity.
+  _chCustom(ch) {
+    const override = (ch === "2" ? this._name2 : this._name1) || "";
+    if (override) return override;
+    const eid = ch === "2" ? this._entities.line_name_2 : this._entities.line_name_1;
+    const state = eid ? this._sv(eid) : "";
+    if (!state || state === "unknown" || state === "unavailable") return "";
+    return state;
+  }
   _chDefault(ch) { return _t(this._hass, ch === "2" ? "line2" : "line1"); }
   _chName(ch) { return this._chCustom(ch) || this._chDefault(ch); }
   _chFull(ch) { const n = this._chCustom(ch); return n ? `${this._chId(ch)} · ${n}` : this._chDefault(ch); }
@@ -1360,4 +1391,4 @@ window.customCards = window.customCards || [];
   const pickerDesc = (I18N[lang] || I18N.en).cardDesc;
   window.customCards.push({ type: "sonoff-valve-card", name: pickerName, description: pickerDesc, preview: true });
 })();
-console.info("%c SONOFF-VALVE-CARD %c v0.8.0 ", "color:white;background:#2ecc8b;font-weight:bold;padding:2px 6px;border-radius:4px 0 0 4px;", "color:#2ecc8b;background:#1a1c2e;font-weight:bold;padding:2px 6px;border-radius:0 4px 4px 0;");
+console.info("%c SONOFF-VALVE-CARD %c v0.9.0 ", "color:white;background:#2ecc8b;font-weight:bold;padding:2px 6px;border-radius:4px 0 0 4px;", "color:#2ecc8b;background:#1a1c2e;font-weight:bold;padding:2px 6px;border-radius:0 4px 4px 0;");

@@ -1,11 +1,12 @@
 """Constants for the Sonoff ZHA integration."""
 
 DOMAIN = "zha_sonoff_quirks"
-VERSION = "0.8.0"
+VERSION = "0.9.0"
 
 # Entity platforms owned by the integration itself (the quirk entities are
-# created by ZHA, not by us; these are the run-history sensors).
-PLATFORMS = ["sensor"]
+# created by ZHA, not by us; these are the run-history sensors and the two
+# line-name config entities).
+PLATFORMS = ["sensor", "text"]
 
 # ZHA model strings this integration's quirk applies to.
 SWV_MODELS = ("SWV-ZF2", "SWV-ZF2U", "SWV-ZF2E")
@@ -26,6 +27,32 @@ CHANNEL_LABELS = {"1": "A", "2": "B"}
 _CHANNEL_ALIASES = {channel: channel for channel in CHANNELS} | {
     label: channel for channel, label in CHANNEL_LABELS.items()
 }
+
+
+#: Where the per-device line names live: entry.options[OPTIONS_LINE_NAMES] is
+#: {switch entity_id: name}. The config entry is the only store that survives
+#: a restart with no expiry and needs no code of its own — and since
+#: __init__.py registers no update listener, writing to it triggers no reload.
+OPTIONS_LINE_NAMES = "line_names"
+
+#: Longest line name accepted. The card truncates well before this; the cap is
+#: there so a paste accident cannot put a paragraph in the entity state.
+LINE_NAME_MAX = 32
+
+
+def line_name_uid_prefix(channel: str) -> str:
+    """Prefix the card matches on to find a channel's line-name entity."""
+    return f"{DOMAIN}_line_name_ch{channel}"
+
+
+def line_name_unique_id(channel: str, switch_entity: str) -> str:
+    """unique_id of a line-name entity: channel FIRST, switch entity_id last.
+
+    Same shape as the history sensors. The channel has to come first because
+    the tail is the switch's entity_id, which the user is free to rename — the
+    card resolves these by prefix, not by exact match.
+    """
+    return f"{line_name_uid_prefix(channel)}_{switch_entity}"
 
 
 def normalize_channel(value: object) -> str | None:

@@ -1,14 +1,9 @@
 """Irrigation history sensors, one pair per SWV channel switch.
 
-Two entities per channel, both attached to the valve's ZHA device. NOT via
-DeviceInfo with the ZHA device's identifiers: on current HA that no longer
-merges — each config entry claiming a foreign identifier gets its own
-duplicate "shadow" device (observed live on 2026-08-10, and visible in
-tuya_irrigation's recent sensors too). Instead the entities register with no
-device at all and hook themselves onto the ZHA device via
-``entity_registry.async_update_entity(..., device_id=...)`` on add, which is
-the association HA actually reads. A cleanup pass removes any empty shadow
-devices a previous version created.
+Two entities per channel, both attached to the valve's ZHA device through
+:class:`~.entity.SwvAttachedEntity` — see that module for why the association
+goes through the entity registry and not ``DeviceInfo``. A cleanup pass here
+removes any empty shadow devices a previous version created.
 
 The entities:
 
@@ -46,6 +41,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, RUNS_ATTR_CAP, history_signal
+from .entity import SwvAttachedEntity
 from .helpers import find_swv_switches
 from .history import SwvRunLog
 
@@ -127,11 +123,8 @@ async def async_setup_entry(
     )
 
 
-class _SwvHistoryEntity(SensorEntity):
-    """Shared device-merge + run-log subscription for the history sensors."""
-
-    _attr_has_entity_name = True
-    _attr_should_poll = False
+class _SwvHistoryEntity(SwvAttachedEntity, SensorEntity):
+    """Shared run-log subscription for the history sensors."""
 
     def __init__(
         self,
@@ -140,22 +133,13 @@ class _SwvHistoryEntity(SensorEntity):
         channel: str,
         run_log: SwvRunLog,
     ) -> None:
-        """Remember the target ZHA device and the switch/channel pair."""
-        self._switch_entity = switch_entity
-        self._channel = channel
+        """Remember the switch/channel pair and the run log behind it."""
+        super().__init__(device, switch_entity, channel)
         self._run_log = run_log
-        # Deliberately NO _attr_device_info (see module docstring): the
-        # registry hook in async_added_to_hass does the device association.
-        self._target_device_id = device.id
 
     async def async_added_to_hass(self) -> None:
         """Attach to the ZHA device and subscribe to the refresh signal."""
-        ent_reg = er.async_get(self.hass)
-        reg_entry = ent_reg.async_get(self.entity_id)
-        if reg_entry is not None and reg_entry.device_id != self._target_device_id:
-            ent_reg.async_update_entity(
-                self.entity_id, device_id=self._target_device_id
-            )
+        await super().async_added_to_hass()
         self.async_on_remove(
             async_dispatcher_connect(
                 self.hass,

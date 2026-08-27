@@ -10,6 +10,16 @@
       "already_configured": "Sonoff ZHA 已配置。"
     }
   },
+  "entity": {
+    "text": {
+      "line_name_a": {
+        "name": "线路 A 名称"
+      },
+      "line_name_b": {
+        "name": "线路 B 名称"
+      }
+    }
+  },
   "selector": {
     "channel": {
       "options": {
