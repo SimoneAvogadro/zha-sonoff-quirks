@@ -25,6 +25,7 @@ run early is a plain ``switch.turn_off`` on the channel switch.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from homeassistant.core import Context, HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
@@ -32,7 +33,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.util import dt as dt_util
 import voluptuous as vol
 
-from .const import DOMAIN
+from .const import CHANNEL_LABELS, CHANNELS, DOMAIN, normalize_channel
 from .helpers import resolve_entities
 
 _LOGGER = logging.getLogger(__name__)
@@ -55,11 +56,28 @@ ATTR_FAIL_SAFE_MINUTES = "fail_safe_minutes"
 MODE_OPTION_DURATION = "duration"
 MODE_OPTION_CAPACITY = "capacity"
 
-# Shared fields of both services. channel is coerced to str so a caller that
-# sends the number 1 instead of the documented "1" still works.
+#: Accepted spellings, for the error message: 1, 2, A, B.
+_CHANNEL_CHOICES = ", ".join([*CHANNELS, *CHANNEL_LABELS.values()])
+
+
+def _channel(value: Any) -> str:
+    """Normalize the channel field, accepting the valve's A/B panel letters.
+
+    The selector sends the canonical "1"/"2", but a hand-written automation
+    may well use the letters printed on the device — or the bare number 1,
+    which YAML parses as an int. All of them normalize here, so nothing
+    downstream ever sees anything but "1" or "2".
+    """
+    channel = normalize_channel(value)
+    if channel is None:
+        raise vol.Invalid(f"channel must be one of {_CHANNEL_CHOICES} (got {value!r})")
+    return channel
+
+
+# Shared fields of both services.
 _COMMON_FIELDS = {
     vol.Required(ATTR_DEVICE_ID): cv.string,
-    vol.Required(ATTR_CHANNEL): vol.All(vol.Coerce(str), vol.In(("1", "2"))),
+    vol.Required(ATTR_CHANNEL): _channel,
     vol.Optional(ATTR_FAIL_SAFE_MINUTES): vol.All(
         vol.Coerce(int), vol.Range(min=0, max=719)
     ),

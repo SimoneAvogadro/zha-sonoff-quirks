@@ -13,8 +13,8 @@
   "selector": {
     "channel": {
       "options": {
-        "1": "Linea 1",
-        "2": "Linea 2"
+        "1": "Linea A",
+        "2": "Linea B"
       }
     }
   },
@@ -29,7 +29,7 @@
         },
         "channel": {
           "name": "Linea",
-          "description": "Quale delle due linee della valvola aprire."
+          "description": "Quale delle due linee della valvola aprire (A o B, come serigrafate sul dispositivo)."
         },
         "liters": {
           "name": "Litri",
@@ -51,7 +51,7 @@
         },
         "channel": {
           "name": "Linea",
-          "description": "Quale delle due linee della valvola aprire."
+          "description": "Quale delle due linee della valvola aprire (A o B, come serigrafate sul dispositivo)."
         },
         "minutes": {
           "name": "Minuti",

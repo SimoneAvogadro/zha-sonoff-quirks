@@ -92,3 +92,31 @@ def test_ogni_servizio_ha_le_stringhe() -> None:
             f"{label}: servizi {set(catalog['services'])} != "
             f"services.yaml {declared}"
         )
+
+
+# ── Etichette del selettore di canale ──
+#
+# Le due uscite sono serigrafate A e B sulla valvola: il selettore deve
+# parlare la lingua del dispositivo, non quella degli endpoint Zigbee. Le
+# CHIAVI restano pero' "1"/"2", che e' il valore che finisce nello YAML
+# dell'automazione: cambiarle romperebbe le automazioni esistenti e
+# orfanizzerebbe i sensori di storico (unique_id ..._ch1/_ch2).
+@pytest.mark.parametrize("label", CATALOGS)
+def test_le_chiavi_del_selettore_canale_restano_numeriche(label: str) -> None:
+    """I valori del selettore non devono diventare "A"/"B"."""
+    options = CATALOGS[label]["selector"]["channel"]["options"]
+    assert set(options) == {"1", "2"}, (
+        f"{label}: le chiavi del selettore channel sono {sorted(options)}; "
+        "devono restare '1' e '2' (sono il valore passato al servizio)"
+    )
+
+
+@pytest.mark.parametrize("label", CATALOGS)
+def test_le_etichette_del_selettore_canale_usano_le_lettere(label: str) -> None:
+    """Ogni traduzione deve terminare con la lettera del pannello."""
+    options = CATALOGS[label]["selector"]["channel"]["options"]
+    for channel, letter in (("1", "A"), ("2", "B")):
+        assert options[channel].strip().endswith(letter), (
+            f"{label}: l'opzione {channel!r} e' {options[channel]!r}; deve "
+            f"terminare con {letter!r}, la lettera serigrafata sulla valvola"
+        )

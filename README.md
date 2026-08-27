@@ -122,7 +122,7 @@ device-centric services, so automations don't need to know the entity layout:
 action: zha_sonoff_quirks.irrigation_by_liters
 data:
   device_id: abc123...        # device picker (SONOFF SWV-ZF2 only)
-  channel: "2"                # radio buttons: Channel 1 / Channel 2
+  channel: "2"                # radio buttons: Line A / Line B
   liters: 250
   fail_safe_minutes: 60       # optional; leaves the current value if omitted
 
@@ -132,6 +132,14 @@ data:
   channel: "1"
   minutes: 15
 ```
+
+`channel` takes `"1"`/`"2"`, the values the radio buttons send — and accepts
+`"A"`/`"B"` (either case) as aliases for them, so a hand-written automation can
+use the letters printed on the valve. The letters are normalised on the way in;
+nothing downstream ever sees anything but `"1"` or `"2"`. The **value stays
+numeric on purpose**: it is what lands in your automation YAML, and renaming it
+would break every existing automation and orphan the history sensors, whose
+`unique_id` embeds `_ch1`/`_ch2`. Only the labels changed.
 
 Minutes rather than seconds by design: `0x501D` has 1-minute granularity
 (0–719). The service writes mode + target (+ fail-safe when given) and turns
@@ -164,6 +172,14 @@ device in the visual editor and it resolves all entities by `unique_id`,
 storing them in the card config. Optional fields rename the card and the two
 lines. If the card does not appear in the picker, hard-refresh the browser
 after the first restart.
+
+From 0.8.0 the lines are labelled **A** and **B** — the letters printed on the
+valve — instead of 1 and 2. Naming a line in the editor (`name_1` / `name_2`)
+does not hide its letter: the letter moves above the start button and the name
+sits below it, and the history rows, the pending overlay and the button tooltip
+read `A · 33 davanti`. That keeps the letter ↔ name pairing in front of you,
+which is what you need when the automation editor asks you for *Line A* or
+*Line B*. With no custom name set, a line simply reads `Line A` as before.
 
 ## Usage: autonomous irrigation
 
@@ -201,9 +217,16 @@ irrigate_garden_250_litres:
 
 ### Channel mapping
 
-`endpoint 1 → switch`, `endpoint 2 → switch_2`. Which one corresponds to the
-A/B lines printed on the valve body is **not yet confirmed**: check it by ear
-(listen for the motor click) before trusting it in an automation.
+`endpoint 1 → switch`, `endpoint 2 → switch_2`. The UI presents them as **line
+A** (channel `"1"`, endpoint 1) and **line B** (channel `"2"`, endpoint 2).
+
+> ⚠️ **That pairing is an assumption, not a measurement.** Nothing in the
+> protocol ties endpoint 1 to the outlet silk-screened *A*; it is the obvious
+> reading, and it is what the labels now claim. **Verify it once on your own
+> valve** — start a short run on line A from the card and watch which outlet
+> actually opens — before relying on it in an automation. If it turns out
+> inverted, the fix is two strings: `CHANNEL_LABELS` in `const.py` and
+> `CH_LETTER` in the card. No ids, entities or stored history change.
 
 Because the configuration is shared, irrigating the two channels with different
 parameters means **serialising**: configure, open CH1, wait for it to close,

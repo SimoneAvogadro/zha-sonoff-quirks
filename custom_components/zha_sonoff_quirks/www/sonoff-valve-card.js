@@ -2,6 +2,13 @@
  * Sonoff Valve Card (Irrigation) for Home Assistant
  * Custom Lovelace card for the SONOFF SWV-ZF2 dual-channel Zigbee water valve,
  * paired with the zha_sonoff_quirks integration (quirk + irrigation services).
+ * v0.8.0 — The two outlets are now called A and B, the letters printed on
+ *          the valve, instead of 1 and 2 (display only — the channel value
+ *          stays "1"/"2" in the config, the services and every id). When a
+ *          line carries a custom name the letter moves above the button and
+ *          the name sits below it, so the A ↔ "33 davanti" pairing you need
+ *          when writing an automation stays visible; history rows, the
+ *          pending overlay and a new tooltip show "A · 33 davanti".
  * v0.7.1 — The date in the run rows collapses on a narrow card. Runs from the
  *          last few days now carry their weekday: "Lunedì 24 ago 05:30" where
  *          there is room, "Lunedì 05:30" where there isn't. The start time
@@ -55,7 +62,7 @@ const I18N = {
     starting: "Avvio…", startFailed: "Avvio fallito",
     stopping: "Arresto…", stopFailed: "Arresto fallito",
     liters: "Litri", time: "Tempo", remaining: "rimanente",
-    line1: "Linea 1", line2: "Linea 2",
+    line1: "Linea A", line2: "Linea B",
     last: "Ultima", duration: "Durata", none: "nessuna",
     today: "oggi", yesterday: "ieri",
     history: "Storico irrigazioni",
@@ -69,7 +76,7 @@ const I18N = {
     editorNoDevice: "Nessuna valvola compatibile trovata",
     editorName: "Nome (opzionale)", editorNamePh: "Nome personalizzato",
     editorNameHint: "Lascia vuoto per usare il nome del dispositivo",
-    editorName1: "Nome Linea 1 (opzionale)", editorName2: "Nome Linea 2 (opzionale)",
+    editorName1: "Nome Linea A (opzionale)", editorName2: "Nome Linea B (opzionale)",
     editorResolveFail: "Registro entità non leggibile — risoluzione euristica sugli entity_id",
     editorUnresolved: "Entità non risolte:",
     cardDesc: "Card per la valvola SONOFF SWV-ZF2 a due linee con avvio a litri o a tempo",
@@ -79,7 +86,7 @@ const I18N = {
     starting: "Starting…", startFailed: "Start failed",
     stopping: "Stopping…", stopFailed: "Stop failed",
     liters: "Liters", time: "Time", remaining: "remaining",
-    line1: "Line 1", line2: "Line 2",
+    line1: "Line A", line2: "Line B",
     last: "Last", duration: "Duration", none: "none",
     today: "today", yesterday: "yesterday",
     history: "Irrigation history",
@@ -93,7 +100,7 @@ const I18N = {
     editorNoDevice: "No compatible valve found",
     editorName: "Name (optional)", editorNamePh: "Custom name",
     editorNameHint: "Leave empty to use device name",
-    editorName1: "Line 1 name (optional)", editorName2: "Line 2 name (optional)",
+    editorName1: "Line A name (optional)", editorName2: "Line B name (optional)",
     editorResolveFail: "Entity registry not readable — falling back to entity_id heuristics",
     editorUnresolved: "Unresolved entities:",
     cardDesc: "Card for the dual-line SONOFF SWV-ZF2 valve with liters or time based runs",
@@ -103,7 +110,7 @@ const I18N = {
     starting: "启动中…", startFailed: "启动失败",
     stopping: "停止中…", stopFailed: "停止失败",
     liters: "升量", time: "时长", remaining: "剩余",
-    line1: "线路 1", line2: "线路 2",
+    line1: "线路 A", line2: "线路 B",
     last: "上次", duration: "持续时间", none: "无",
     today: "今天", yesterday: "昨天",
     history: "灌溉历史",
@@ -117,7 +124,7 @@ const I18N = {
     editorNoDevice: "未找到兼容的水阀",
     editorName: "名称（可选）", editorNamePh: "自定义名称",
     editorNameHint: "留空使用设备名称",
-    editorName1: "线路 1 名称（可选）", editorName2: "线路 2 名称（可选）",
+    editorName1: "线路 A 名称（可选）", editorName2: "线路 B 名称（可选）",
     editorResolveFail: "无法读取实体注册表 — 回退到 entity_id 启发式匹配",
     editorUnresolved: "未解析的实体：",
     cardDesc: "适用于双线路 SONOFF SWV-ZF2 水阀的卡片，支持按升量或时长灌溉",
@@ -128,6 +135,11 @@ function _i18nLang(hass) {
   return I18N[lang] ? lang : "en";
 }
 function _t(hass, key) { return (I18N[_i18nLang(hass)] || I18N.en)[key] || I18N.en[key] || key; }
+
+// Letter silk-screened next to each outlet on the valve. Mirrors
+// CHANNEL_LABELS in const.py: presentation only — the card keeps addressing
+// the channels as "1"/"2" in config, entity prefixes and service calls.
+const CH_LETTER = { "1": "A", "2": "B" };
 function _numLocale(hass) { const l = hass?.language; return l || "en"; }
 
 const COMPAT_MODELS = ["SWV-ZF2", "SWV-ZF2U", "SWV-ZF2E"];
@@ -627,10 +639,17 @@ class SonoffValveCard extends HTMLElement {
     return s.state === "unavailable" || s.state === "unknown" || s.state === "none";
   }
   _isOffline() { return this._chOffline("1") && this._chOffline("2"); }
-  _chName(ch) {
-    if (ch === "2") return this._name2 || _t(this._hass, "line2");
-    return this._name1 || _t(this._hass, "line1");
-  }
+  // ── Channel naming ──
+  // One source (the optional name_1/name_2 config), four renderings: the
+  // letter alone (above the button), the name alone (below it), the two
+  // joined for single-line spots (history rows, pending overlay) and the
+  // spelled-out tooltip. With no custom name they all collapse to "Linea A".
+  _chId(ch) { return CH_LETTER[ch] || CH_LETTER["1"]; }
+  _chCustom(ch) { return (ch === "2" ? this._name2 : this._name1) || ""; }
+  _chDefault(ch) { return _t(this._hass, ch === "2" ? "line2" : "line1"); }
+  _chName(ch) { return this._chCustom(ch) || this._chDefault(ch); }
+  _chFull(ch) { const n = this._chCustom(ch); return n ? `${this._chId(ch)} · ${n}` : this._chDefault(ch); }
+  _chTitle(ch) { const n = this._chCustom(ch); return n ? `${this._chDefault(ch)} — ${n}` : this._chDefault(ch); }
   _getName() {
     if (this._configName) return this._configName;
     const d = this._hass?.devices?.[this._deviceId];
@@ -852,7 +871,7 @@ class SonoffValveCard extends HTMLElement {
     return `<div class="hl-row" title="${this._esc(this._outcomeLabel(r))}">`
       + `<span class="hl-dot ${this._outcomeClass(r)}"></span>`
       + `<span class="hl-when">${when}</span>`
-      + `<span class="hl-ch">${this._esc(this._chName(r._ch))}</span>`
+      + `<span class="hl-ch">${this._esc(this._chFull(r._ch))}</span>`
       + `<span class="hl-dur">${this._esc(dur)}</span>`
       + `<span class="hl-vol">${this._esc(vol)}</span>`
       + `</div>`;
@@ -999,6 +1018,11 @@ ha-card{overflow:hidden}
 .gb.dis{opacity:.35;pointer-events:none;box-shadow:none;animation:none}
 .chc{display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0}
 .chl{font-size:9px;color:var(--th);max-width:56px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center}
+/* Panel letter above the button. Hidden while the line has no custom name:
+   with "Linea A" already below, an "A" on top is noise — and the row keeps
+   exactly the height it had before this feature existed. */
+.chid{display:none;font-size:9px;font-weight:700;letter-spacing:.06em;line-height:1;color:var(--th);text-align:center}
+.chid.vi{display:block}
 .pw{height:3px;border-radius:2px;background:var(--bd);margin-top:6px;overflow:hidden;opacity:0;transition:opacity .2s}.pw.vi{opacity:1}
 .pb{height:100%;border-radius:2px;background:var(--accent);transition:width .3s linear}
 /* The history section is the query container for the collapsing date. It sits
@@ -1079,8 +1103,8 @@ input[type=number]{-moz-appearance:textfield}
       <div class="ip" id="ip-litri"><div>
         <div class="ir">
           <div class="nw"><input type="number" inputmode="numeric" pattern="[0-9]*" class="ni" id="vl" min="1" max="10000"><div class="ut">L</div></div>
-          <div class="chc"><button class="gb" id="gl1">${ICON_PLAY}</button><span class="chl" id="chl-l1"></span></div>
-          <div class="chc"><button class="gb" id="gl2">${ICON_PLAY}</button><span class="chl" id="chl-l2"></span></div>
+          <div class="chc" id="chc-l1"><span class="chid" id="chid-l1"></span><button class="gb" id="gl1">${ICON_PLAY}</button><span class="chl" id="chl-l1"></span></div>
+          <div class="chc" id="chc-l2"><span class="chid" id="chid-l2"></span><button class="gb" id="gl2">${ICON_PLAY}</button><span class="chl" id="chl-l2"></span></div>
         </div>
         <div class="fh" id="litri-fh" style="display:none"></div>
         <div class="pw" id="litri-pw"><div class="pb" id="litri-bar" style="width:0%"></div></div>
@@ -1088,8 +1112,8 @@ input[type=number]{-moz-appearance:textfield}
       <div class="ip" id="ip-tempo"><div>
         <div class="ir">
           <div class="nw"><input type="number" inputmode="numeric" pattern="[0-9]*" class="ni" id="tmin" min="1" max="719"><div class="ut">min</div></div>
-          <div class="chc"><button class="gb" id="gt1">${ICON_PLAY}</button><span class="chl" id="chl-t1"></span></div>
-          <div class="chc"><button class="gb" id="gt2">${ICON_PLAY}</button><span class="chl" id="chl-t2"></span></div>
+          <div class="chc" id="chc-t1"><span class="chid" id="chid-t1"></span><button class="gb" id="gt1">${ICON_PLAY}</button><span class="chl" id="chl-t1"></span></div>
+          <div class="chc" id="chc-t2"><span class="chid" id="chid-t2"></span><button class="gb" id="gt2">${ICON_PLAY}</button><span class="chl" id="chl-t2"></span></div>
         </div>
         <div class="fh" id="tempo-fh" style="display:none"></div>
         <div class="pw" id="tempo-pw"><div class="pb" id="tempo-bar" style="width:0%"></div></div>
@@ -1127,6 +1151,8 @@ input[type=number]{-moz-appearance:textfield}
       vl: $("vl"), tmin: $("tmin"),
       gl1: $("gl1"), gl2: $("gl2"), gt1: $("gt1"), gt2: $("gt2"),
       chlL1: $("chl-l1"), chlL2: $("chl-l2"), chlT1: $("chl-t1"), chlT2: $("chl-t2"),
+      chcL1: $("chc-l1"), chcL2: $("chc-l2"), chcT1: $("chc-t1"), chcT2: $("chc-t2"),
+      chidL1: $("chid-l1"), chidL2: $("chid-l2"), chidT1: $("chid-t1"), chidT2: $("chid-t2"),
       litriFh: $("litri-fh"), litriPw: $("litri-pw"), litriBar: $("litri-bar"),
       tempoFh: $("tempo-fh"), tempoPw: $("tempo-pw"), tempoBar: $("tempo-bar"),
       startOv: $("start-ov"), startOvTxt: $("start-ov-txt"),
@@ -1207,8 +1233,21 @@ input[type=number]{-moz-appearance:textfield}
     if (!this._isEditingGroup("tempo")) this._setInput(el.tmin, Math.round(this._inputMin));
 
     // ── Channel labels + go buttons (each reflects only its own switch) ──
-    this._txt(el.chlL1, this._chName("1")); this._txt(el.chlT1, this._chName("1"));
-    this._txt(el.chlL2, this._chName("2")); this._txt(el.chlT2, this._chName("2"));
+    for (const [ch, cells] of [
+      ["1", [[el.chcL1, el.chidL1, el.chlL1], [el.chcT1, el.chidT1, el.chlT1]]],
+      ["2", [[el.chcL2, el.chidL2, el.chlL2], [el.chcT2, el.chidT2, el.chlT2]]],
+    ]) {
+      const named = !!this._chCustom(ch), letter = this._chId(ch);
+      const name = this._chName(ch), title = this._chTitle(ch);
+      for (const [wrap, idEl, lblEl] of cells) {
+        this._txt(idEl, letter);
+        this._cls(idEl, "vi", named);
+        this._txt(lblEl, name);
+        // The tooltip spells the pairing out on desktop; on touch, where there
+        // is no hover, the letter above the button is what carries it.
+        if (wrap && wrap.title !== title) wrap.title = title;
+      }
+    }
     for (const [ch, btns] of [["1", [el.gl1, el.gt1]], ["2", [el.gl2, el.gt2]]]) {
       const on = this._chOn(ch);
       const dis = !offline && !fatal && this._chOffline(ch);
@@ -1237,7 +1276,7 @@ input[type=number]{-moz-appearance:textfield}
       if (tp) this._txt(el.tempoFh, `${this._mmss(tp.remaining)} ${t("remaining")}`);
     }
 
-    // ── Pending overlay ("Avvio… (Linea N)" / "Arresto… (Linea N)") ──
+    // ── Pending overlay ("Avvio… (A · 33 davanti)" / "Arresto… (…)") ──
     const p = this._pending;
     this._cls(el.startOv, "vi", !!p);
     this._cls(el.startOv, "failed", !!(p && p.failed));
@@ -1245,7 +1284,7 @@ input[type=number]{-moz-appearance:textfield}
       const base = p.action === "stop"
         ? (p.failed ? t("stopFailed") : t("stopping"))
         : (p.failed ? t("startFailed") : t("starting"));
-      this._txt(el.startOvTxt, `${base} (${this._chName(p.channel)})`);
+      this._txt(el.startOvTxt, `${base} (${this._chFull(p.channel)})`);
     }
 
     // ── Idle summary (last session, from the persistent session sensors) ──
@@ -1321,4 +1360,4 @@ window.customCards = window.customCards || [];
   const pickerDesc = (I18N[lang] || I18N.en).cardDesc;
   window.customCards.push({ type: "sonoff-valve-card", name: pickerName, description: pickerDesc, preview: true });
 })();
-console.info("%c SONOFF-VALVE-CARD %c v0.7.1 ", "color:white;background:#2ecc8b;font-weight:bold;padding:2px 6px;border-radius:4px 0 0 4px;", "color:#2ecc8b;background:#1a1c2e;font-weight:bold;padding:2px 6px;border-radius:0 4px 4px 0;");
+console.info("%c SONOFF-VALVE-CARD %c v0.8.0 ", "color:white;background:#2ecc8b;font-weight:bold;padding:2px 6px;border-radius:4px 0 0 4px;", "color:#2ecc8b;background:#1a1c2e;font-weight:bold;padding:2px 6px;border-radius:0 4px 4px 0;");

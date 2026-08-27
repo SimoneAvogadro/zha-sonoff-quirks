@@ -13,23 +13,23 @@
   "selector": {
     "channel": {
       "options": {
-        "1": "Channel 1",
-        "2": "Channel 2"
+        "1": "Line A",
+        "2": "Line B"
       }
     }
   },
   "services": {
     "irrigation_by_liters": {
       "name": "Liters🪣💧 (🌱volume irrigation)",
-      "description": "Volume: opens the chosen channel of the SONOFF SWV-ZF2 valve; the valve closes it by itself once the target liters have been delivered.",
+      "description": "Volume: opens the chosen line of the SONOFF SWV-ZF2 valve; the valve closes it by itself once the target liters have been delivered.",
       "fields": {
         "device_id": {
           "name": "Device",
           "description": "The SONOFF SWV-ZF2 valve to irrigate with."
         },
         "channel": {
-          "name": "Channel",
-          "description": "Which of the two valve channels to open."
+          "name": "Line",
+          "description": "Which of the two valve lines to open (A or B, as printed on the device)."
         },
         "liters": {
           "name": "Liters",
@@ -37,21 +37,21 @@
         },
         "fail_safe_minutes": {
           "name": "Fail-safe timeout",
-          "description": "Maximum time the channel may stay open, in minutes (0 disables the fail-safe). If not set, the valve keeps its current fail-safe setting."
+          "description": "Maximum time the line may stay open, in minutes (0 disables the fail-safe). If not set, the valve keeps its current fail-safe setting."
         }
       }
     },
     "irrigation_by_minutes": {
       "name": "Minutes⏰💧 (🌱timed irrigation)",
-      "description": "Time: opens the chosen channel of the SONOFF SWV-ZF2 valve; the valve closes it by itself when the set minutes are up.",
+      "description": "Time: opens the chosen line of the SONOFF SWV-ZF2 valve; the valve closes it by itself when the set minutes are up.",
       "fields": {
         "device_id": {
           "name": "Device",
           "description": "The SONOFF SWV-ZF2 valve to irrigate with."
         },
         "channel": {
-          "name": "Channel",
-          "description": "Which of the two valve channels to open."
+          "name": "Line",
+          "description": "Which of the two valve lines to open (A or B, as printed on the device)."
         },
         "minutes": {
           "name": "Minutes",
@@ -59,7 +59,7 @@
         },
         "fail_safe_minutes": {
           "name": "Fail-safe timeout",
-          "description": "Maximum time the channel may stay open, in minutes (0 disables the fail-safe). If not set, the valve keeps its current fail-safe setting."
+          "description": "Maximum time the line may stay open, in minutes (0 disables the fail-safe). If not set, the valve keeps its current fail-safe setting."
         }
       }
     }

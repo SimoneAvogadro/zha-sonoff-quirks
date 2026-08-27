@@ -1,7 +1,7 @@
 """Constants for the Sonoff ZHA integration."""
 
 DOMAIN = "zha_sonoff_quirks"
-VERSION = "0.7.1"
+VERSION = "0.8.0"
 
 # Entity platforms owned by the integration itself (the quirk entities are
 # created by ZHA, not by us; these are the run-history sensors).
@@ -9,6 +9,33 @@ PLATFORMS = ["sensor"]
 
 # ZHA model strings this integration's quirk applies to.
 SWV_MODELS = ("SWV-ZF2", "SWV-ZF2U", "SWV-ZF2E")
+
+# ── Channels (the valve's two outlets) ──
+#: Canonical channel value used EVERYWHERE below the presentation layer: the
+#: service API, the history sensors' unique_id (..._ch1/_ch2), the run-log
+#: keys and the prefixes the card matches on. Never renamed — doing so would
+#: break existing automations and orphan the history sensors.
+CHANNELS = ("1", "2")
+
+#: Letter silk-screened next to each outlet on the valve. Presentation only:
+#: it never enters an id, an entity name or a stored key.
+CHANNEL_LABELS = {"1": "A", "2": "B"}
+
+#: Every accepted spelling -> canonical channel. Derived from the two mappings
+#: above so a panel letter is, by construction, an alias of its own channel.
+_CHANNEL_ALIASES = {channel: channel for channel in CHANNELS} | {
+    label: channel for channel, label in CHANNEL_LABELS.items()
+}
+
+
+def normalize_channel(value: object) -> str | None:
+    """Map any accepted channel spelling to "1"/"2", or None if invalid.
+
+    Accepts the canonical strings, the integers 1/2 (an automation written
+    without quotes), and the panel letters A/B in either case, so
+    ``channel: "A"`` in YAML behaves exactly like ``channel: "1"``.
+    """
+    return _CHANNEL_ALIASES.get(str(value).strip().upper())
 
 # ── Irrigation run log ──
 STORAGE_KEY = f"{DOMAIN}_history"
