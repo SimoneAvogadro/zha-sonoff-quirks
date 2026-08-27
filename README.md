@@ -248,13 +248,12 @@ irrigate_garden_250_litres:
 `endpoint 1 → switch`, `endpoint 2 → switch_2`. The UI presents them as **line
 A** (channel `"1"`, endpoint 1) and **line B** (channel `"2"`, endpoint 2).
 
-> ⚠️ **That pairing is an assumption, not a measurement.** Nothing in the
-> protocol ties endpoint 1 to the outlet silk-screened *A*; it is the obvious
-> reading, and it is what the labels now claim. **Verify it once on your own
-> valve** — start a short run on line A from the card and watch which outlet
-> actually opens — before relying on it in an automation. If it turns out
-> inverted, the fix is two strings: `CHANNEL_LABELS` in `const.py` and
-> `CH_LETTER` in the card. No ids, entities or stored history change.
+**Confirmed on the device on 2026-08-27** (SWV-ZF2E, fw `0x00001009`): opening
+line A from the card opens the outlet silk-screened *A*. Nothing in the
+protocol guarantees it — endpoint order and silk-screen order are independent —
+so if a future firmware or hardware revision ever swapped them, the fix is two
+strings: `CHANNEL_LABELS` in `const.py` and `CH_LETTER` in the card. No ids,
+entities or stored history would change.
 
 Because the configuration is shared, irrigating the two channels with different
 parameters means **serialising**: configure, open CH1, wait for it to close,
