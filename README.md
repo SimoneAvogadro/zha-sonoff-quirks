@@ -179,6 +179,28 @@ history and the voice assistant keep showing whatever the ZHA switch entities
 are called — rename those too if you want the name everywhere. And the names
 live in the config entry: removing the integration takes them with it.
 
+### Device actions
+
+The same two operations are also offered as **device actions**: in the
+automation editor pick the valve under *Device*, and you get *Liters* /
+*Minutes* with a line picker that reads **`A — Prato davanti`** — the names you
+set on the device, not a generic "Line A".
+
+That is the whole reason they exist. A service's fields are described
+statically in `services.yaml`, so its `channel` radio says the same thing for
+every valve; device actions are the one HA surface where the integration is
+asked, at runtime and for a specific device, which fields to show. If you
+rename a line, the picker follows on the next open.
+
+The labels are deliberately language-neutral — the silk-screened letter plus
+your name, no "Line"/"Linea" word — because HA renders them verbatim without
+passing them through the translation files. The field's own label *is*
+translated.
+
+Device actions call the services underneath, so both routes behave identically,
+including the refusal to reconfigure a channel mid-run. Existing automations
+built on the services keep working untouched; nothing is deprecated.
+
 ## Lovelace card
 
 The integration ships and auto-registers `sonoff-valve-card` — same look and

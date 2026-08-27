@@ -10,6 +10,18 @@
       "already_configured": "Sonoff ZHA 已配置。"
     }
   },
+  "device_automation": {
+    "action_type": {
+      "irrigate_liters": "升量🪣💧（🌱定量灌溉）",
+      "irrigate_minutes": "分钟⏰💧（🌱定时灌溉）"
+    },
+    "extra_fields": {
+      "channel": "线路",
+      "liters": "升量",
+      "minutes": "分钟",
+      "fail_safe_minutes": "安全超时"
+    }
+  },
   "entity": {
     "text": {
       "line_name_a": {

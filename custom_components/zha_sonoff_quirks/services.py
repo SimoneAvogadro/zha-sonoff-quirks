@@ -60,13 +60,16 @@ MODE_OPTION_CAPACITY = "capacity"
 _CHANNEL_CHOICES = ", ".join([*CHANNELS, *CHANNEL_LABELS.values()])
 
 
-def _channel(value: Any) -> str:
+def validate_channel(value: Any) -> str:
     """Normalize the channel field, accepting the valve's A/B panel letters.
 
     The selector sends the canonical "1"/"2", but a hand-written automation
     may well use the letters printed on the device — or the bare number 1,
     which YAML parses as an int. All of them normalize here, so nothing
     downstream ever sees anything but "1" or "2".
+
+    Public because device_action.py validates its saved configs with it too:
+    one definition of what a channel may be spelled as, not two.
     """
     channel = normalize_channel(value)
     if channel is None:
@@ -77,7 +80,7 @@ def _channel(value: Any) -> str:
 # Shared fields of both services.
 _COMMON_FIELDS = {
     vol.Required(ATTR_DEVICE_ID): cv.string,
-    vol.Required(ATTR_CHANNEL): _channel,
+    vol.Required(ATTR_CHANNEL): validate_channel,
     vol.Optional(ATTR_FAIL_SAFE_MINUTES): vol.All(
         vol.Coerce(int), vol.Range(min=0, max=719)
     ),

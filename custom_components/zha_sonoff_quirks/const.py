@@ -1,7 +1,7 @@
 """Constants for the Sonoff ZHA integration."""
 
 DOMAIN = "zha_sonoff_quirks"
-VERSION = "0.9.1"
+VERSION = "0.10.0"
 
 # Entity platforms owned by the integration itself (the quirk entities are
 # created by ZHA, not by us; these are the run-history sensors and the two
@@ -53,6 +53,27 @@ def line_name_unique_id(channel: str, switch_entity: str) -> str:
     card resolves these by prefix, not by exact match.
     """
     return f"{line_name_uid_prefix(channel)}_{switch_entity}"
+
+
+# ── Device actions ──
+#: Action types offered in the device-first automation builder. They mirror the
+#: two services one-for-one; see device_action.py.
+ACTION_IRRIGATE_LITERS = "irrigate_liters"
+ACTION_IRRIGATE_MINUTES = "irrigate_minutes"
+ACTION_TYPES = (ACTION_IRRIGATE_LITERS, ACTION_IRRIGATE_MINUTES)
+
+
+def line_option_label(letter: str, name: str | None) -> str:
+    """Label for one line in the device action's line picker.
+
+    Deliberately language-NEUTRAL: unlike the service selector, whose options
+    go through the translation files, these are built here at runtime and HA
+    renders them verbatim. So the label carries only the silk-screened letter
+    — universal — and the name the user chose. The word "Line" lives in the
+    field's own label, which *is* translated.
+    """
+    cleaned = (name or "").strip()
+    return f"{letter} — {cleaned}" if cleaned else letter
 
 
 def normalize_channel(value: object) -> str | None:

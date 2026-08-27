@@ -27,6 +27,7 @@ _spec.loader.exec_module(_module)
 CHANNELS = _module.CHANNELS
 CHANNEL_LABELS = _module.CHANNEL_LABELS
 normalize_channel = _module.normalize_channel
+line_option_label = _module.line_option_label
 
 
 # ── normalize_channel ──
@@ -73,3 +74,31 @@ def test_ogni_etichetta_e_alias_del_proprio_canale():
     # diventassero "1"/"2" o "sinistra"/"destra", questo test cade.
     for channel, label in CHANNEL_LABELS.items():
         assert normalize_channel(label) == channel
+
+
+# ── Etichetta di una linea nel selettore della device action ──
+#
+# Qui l'etichetta la costruiamo noi in Python, e HA non la traduce: quindi
+# deve restare NEUTRA rispetto alla lingua. Solo la lettera serigrafata, che
+# e' universale, piu' il nome che l'utente ha scelto. La parola "Linea" vive
+# nel nome del campo, che invece e' tradotto.
+def test_senza_nome_l_etichetta_e_la_sola_lettera():
+    assert line_option_label("A", "") == "A"
+    assert line_option_label("B", None) == "B"
+
+
+def test_col_nome_lettera_e_nome_sono_uniti_da_un_trattino():
+    assert line_option_label("A", "Prato davanti") == "A — Prato davanti"
+
+
+def test_gli_spazi_intorno_al_nome_sono_ignorati():
+    assert line_option_label("B", "  Giardino  ") == "B — Giardino"
+    assert line_option_label("B", "   ") == "B"
+
+
+def test_l_etichetta_non_contiene_parole_traducibili():
+    # Se un giorno qualcuno ci mettesse "Linea", la device action mostrerebbe
+    # italiano a un utente inglese: il selettore non passa dalle traduzioni.
+    label = line_option_label("A", "Prato davanti")
+    for word in ("Linea", "Line", "线路", "Channel"):
+        assert word not in label
