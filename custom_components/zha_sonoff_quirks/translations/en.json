@@ -10,18 +10,6 @@
       "already_configured": "Sonoff ZHA is already set up."
     }
   },
-  "device_automation": {
-    "action_type": {
-      "irrigate_liters": "Liters🪣💧 (🌱irrigate by volume)",
-      "irrigate_minutes": "Minutes⏰💧 (🌱irrigate by time)"
-    },
-    "extra_fields": {
-      "channel": "Line",
-      "liters": "Liters",
-      "minutes": "Minutes",
-      "fail_safe_minutes": "Fail-safe timeout"
-    }
-  },
   "entity": {
     "text": {
       "line_name_a": {

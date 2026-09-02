@@ -197,3 +197,36 @@ storico da zero: nuove entità sensore, contatore `total_increasing` azzerato,
 corse precedenti orfane sotto la vecchia chiave (non perse: restano nel file).
 Fix corretto: chiavare per `id` di registry dello switch (stabile ai rename)
 con migrazione dello store. Rimandato: rename raro, danno limitato.
+
+## 12. Device action — PARCHEGGIATE nel branch `device_actions`
+
+Servivano a una cosa sola: mostrare nell'editor automazioni un selettore di
+linea etichettato coi nomi del dispositivo (`A — Giardino`), impossibile in un
+servizio perché `services.yaml` è statico e uguale per ogni valvola. Scritte
+nella 0.10.0, **non hanno mai funzionato**: HA non ci ha mai interrogati.
+
+Causa, dal sorgente di HA 2026.8.3
+(`components/device_automation/__init__.py`): i domini candidati di un
+dispositivo si raccolgono dai **`config_entries` del device** e dal
+**`.domain` delle entità** che ci stanno sopra — mai dal `.platform` che le ha
+create. Il nostro config entry non è sul device ZHA, perché `entity.py`
+aggancia le entità via registro proprio per NON creare device duplicati.
+
+E non è aggirabile: dalla 2026.8 il device registry è alla versione 3 e *«a
+device belongs to a single config entry»*, con gli identifiers unici per
+config entry e non più globalmente
+([dev blog, 2026-07-21](https://developers.home-assistant.io/blog/2026/07/21/device-registry-single-config-entry/)).
+`async_update_device(add_config_entry_id=…)` è deprecato; il sostituto
+`new_config_entry_id` **trasferisce** la proprietà, cioè strapperebbe la
+valvola a ZHA. Non esiste un modo documentato perché un'integrazione
+contribuisca device action al dispositivo di un'altra.
+
+L'unica strada rimasta, se un giorno la si vuole: **un device nostro**, con
+identifiers nostri e `via_device` verso quello ZHA (la risoluzione di
+`via_device` è ancora globale, verificato nel sorgente), su cui spostare le
+nostre entità. Le device action funzionerebbero perché quel device lo
+possediamo noi. Costo: i nostri sensori non sono più nella pagina della
+valvola ma in un dispositivo figlio.
+
+Da verificare prima di provarci: cosa succede al device figlio quando la
+valvola ZHA viene rimossa.
