@@ -57,6 +57,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import target as target_helpers
+from homeassistant.helpers.selector import TargetSelector
 from homeassistant.helpers.service import async_set_service_schema
 from homeassistant.util import dt as dt_util
 from homeassistant.util.yaml import load_yaml_dict
@@ -425,6 +426,15 @@ async def async_publish_service_descriptions(
     yaml_desc = await _async_services_yaml(hass)
     for service in (SERVICE_IRRIGATION_BY_LITERS, SERVICE_IRRIGATION_BY_MINUTES):
         desc = copy.deepcopy(yaml_desc.get(service) or {})
+        # HA validates services.yaml through TargetSelector.CONFIG_SCHEMA when
+        # it loads the file itself, which turns a scalar ``domain: sensor`` /
+        # ``device_class: timestamp`` into one-element lists. We read the raw
+        # YAML instead, and ``async_set_service_schema`` stores the target
+        # verbatim; ``get_services_for_target`` (the "by target" tab) then
+        # does ``set("sensor")`` — a set of letters — and never matches, so
+        # the services vanish from the tab. Normalise the same way HA does.
+        if "target" in desc:
+            desc["target"] = TargetSelector.CONFIG_SCHEMA(desc["target"])
         if labels:
             select = desc["fields"][ATTR_CHANNEL]["selector"]["select"]
             select["options"] = [

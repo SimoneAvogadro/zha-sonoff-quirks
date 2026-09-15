@@ -29,8 +29,10 @@ irrigation_by_liters:
         model: SWV-ZF2E
     entity:
       - integration: zha_sonoff_quirks
-        domain: sensor
-        device_class: timestamp
+        # Lists on purpose: services.py republishes this file's content at
+        # runtime, and the "by target" matcher expects list-valued filters.
+        domain: [sensor]
+        device_class: [timestamp]
   fields:
     channel:
       required: true
@@ -74,8 +76,10 @@ irrigation_by_minutes:
         model: SWV-ZF2E
     entity:
       - integration: zha_sonoff_quirks
-        domain: sensor
-        device_class: timestamp
+        # Lists on purpose: services.py republishes this file's content at
+        # runtime, and the "by target" matcher expects list-valued filters.
+        domain: [sensor]
+        device_class: [timestamp]
   fields:
     channel:
       required: true

@@ -94,6 +94,25 @@ def test_ogni_servizio_ha_le_stringhe() -> None:
         )
 
 
+def test_filtri_target_sono_liste() -> None:
+    """`domain` e `device_class` dei filtri entità del target sono liste.
+
+    services.py ripubblica il contenuto grezzo di services.yaml con
+    async_set_service_schema, che non normalizza il target come fa HA quando
+    legge il file da solo. Il matcher della tab "Per destinazione" fa
+    set(filtro["domain"]): con uno scalare "sensor" ottiene un insieme di
+    lettere e i servizi spariscono dalla tab (regressione della 0.11.0).
+    """
+    text = (_COMPONENT / "services.yaml").read_text(encoding="utf-8")
+    scalars = re.findall(
+        r"^\s+(domain|device_class):\s*(?!\[)(\S.*)$", text, re.MULTILINE
+    )
+    assert not scalars, f"filtri target non in forma di lista: {scalars}"
+    assert re.search(r"^\s+domain:\s*\[", text, re.MULTILINE), (
+        "nessun filtro domain nel target di services.yaml"
+    )
+
+
 # ── Etichette del selettore di canale ──
 #
 # Le due uscite sono serigrafate A e B sulla valvola: il selettore deve
