@@ -227,6 +227,17 @@ device; see [Naming the two lines](#naming-the-two-lines) above. A card saved
 before 0.9.0 adopts the line-name entities at runtime, so there is no need to
 reopen its editor.
 
+A small **Zigbee signal icon** (three arcs + dot, the same as in the
+tuya-cards-for-ha cards) sits left of the battery once the device exposes a
+signal-quality entity: ZHA's `LQI` / `RSSI` sensors are *diagnostic* and
+**disabled by default** — enable at least one from the device page (Settings →
+Devices & Services → the valve → "+N entities not shown"); Zigbee2MQTT's
+`linkquality` is created automatically. Nothing to configure: the card finds the
+sensor on its device, whatever its entity id, and re-checks once a minute.
+LQI is preferred (4 arcs ≥ 200, 3 ≥ 150, 2 ≥ 100, 1 red below); RSSI is the
+fallback (−60 / −70 / −80 dBm). Hovering shows the raw values. The icon is
+hidden with the battery while the valve is offline.
+
 ## Usage: autonomous irrigation
 
 The model is **configure → turn on**:

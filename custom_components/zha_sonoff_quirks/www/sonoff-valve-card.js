@@ -2,6 +2,13 @@
  * Sonoff Valve Card (Irrigation) for Home Assistant
  * Custom Lovelace card for the SONOFF SWV-ZF2 dual-channel Zigbee water valve,
  * paired with the zha_sonoff_quirks integration (quirk + irrigation services).
+ * (unreleased) — Zigbee signal-quality icon (WiFi-style arcs) left of the
+ *          battery, the same one the tuya-cards-for-ha cards show: sensor
+ *          _lqi / _rssi (ZHA, diagnostic, disabled by default) or _linkquality
+ *          (Z2M), found on the card's device via hass.entities — no config.
+ *          LQI first, RSSI as fallback; 4 levels, the lowest red; hidden with
+ *          the battery when offline; re-scanned once a minute so a diagnostic
+ *          enabled later shows up without an editor visit.
  * v0.9.1 — The line letter moves INSIDE its start button — (A ▶) — instead of
  *          sitting above it, so the button says which outlet it opens without
  *          a caption. The button becomes a pill and its icon gets its own
@@ -212,6 +219,104 @@ const EID_RULES = [
 const ICON_PLAY = `<svg width="18" height="18" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="white"/></svg>`;
 const ICON_STOP = `<svg width="16" height="16" viewBox="0 0 24 24" fill="white"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>`;
 const BAD_STATES = ["unavailable", "unknown", "none", ""];
+
+// ── Zigbee signal-quality icon (same icon and thresholds as the two cards of
+// tuya-cards-for-ha, src/signal-quality.js there). ZHA exposes
+// sensor.<prefix>_lqi (0–255) and sensor.<prefix>_rssi (dBm), diagnostic and
+// disabled by default; Zigbee2MQTT exposes sensor.<prefix>_linkquality. The
+// entities are found on the card's device through hass.entities — the
+// frontend's entity-registry display map (entity_id → { device_id, … }) —
+// since this card is addressed by device_id and the valve's entities carry
+// mixed prefixes (area-named irrigation entities, device-named diagnostics).
+// Only entities that also have a state count, so a disabled diagnostic keeps
+// the icon hidden. LQI is preferred; RSSI is the fallback when it is the sole
+// enabled one. 4 levels, the lowest red; hidden with the battery when offline.
+const SQ_SUFFIX = { lqi: "_lqi", linkquality: "_linkquality", rssi: "_rssi" };
+function sqResolve(hass, deviceId) {
+  const out = {};
+  const reg = hass?.entities;
+  if (!deviceId || !reg) return out;
+  for (const ent of Object.values(reg)) {
+    if (!ent || ent.device_id !== deviceId) continue;
+    const eid = ent.entity_id;
+    if (typeof eid !== "string" || !eid.startsWith("sensor.") || hass.states?.[eid] === undefined) continue;
+    for (const k of Object.keys(SQ_SUFFIX)) if (eid.endsWith(SQ_SUFFIX[k])) out[k] = eid;
+  }
+  return out;
+}
+// 4 = excellent … 1 = weak, 0 = no reading. LQI first, RSSI as fallback.
+function sqLevel(lqi, rssi) {
+  if (Number.isFinite(lqi)) {
+    if (lqi >= 200) return 4;
+    if (lqi >= 150) return 3;
+    if (lqi >= 100) return 2;
+    return 1;
+  }
+  if (Number.isFinite(rssi)) {
+    if (rssi >= -60) return 4;
+    if (rssi >= -70) return 3;
+    if (rssi >= -80) return 2;
+    return 1;
+  }
+  return 0;
+}
+function sqNum(hass, eid) {
+  if (!eid) return null;
+  const s = hass?.states?.[eid];
+  if (!s) return null;
+  const v = parseFloat(s.state);
+  return Number.isFinite(v) ? v : null;
+}
+// ids: { lqi, linkquality, rssi } (any may be missing). `present` decides
+// whether the icon is shown at all; level 0 with present true = entity there
+// but no numeric value yet (unavailable / unknown right after a restart).
+function sqRead(hass, ids) {
+  const has = (eid) => !!eid && hass?.states?.[eid] !== undefined;
+  const present = has(ids?.lqi) || has(ids?.linkquality) || has(ids?.rssi);
+  const lqi = sqNum(hass, ids?.lqi) ?? sqNum(hass, ids?.linkquality);
+  const rssi = sqNum(hass, ids?.rssi);
+  const level = present ? sqLevel(lqi, rssi) : 0;
+  return { present, lqi, rssi, level, title: sqTitle({ lqi, rssi }) };
+}
+function sqTitle(info) {
+  const parts = [];
+  if (Number.isFinite(info?.lqi)) parts.push(`LQI ${Math.round(info.lqi)}`);
+  if (Number.isFinite(info?.rssi)) parts.push(`RSSI ${Math.round(info.rssi)} dBm`);
+  return parts.join(" · ");
+}
+// Dot (a1) + three arcs (a2..a4): the offline banner's wifi glyph without the
+// slash. Stroked in currentColor; CSS on the wrapper's data-level lights the arcs.
+function sqSvg() {
+  return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
+    `<path class="a4" d="M2 8.82a15 15 0 0 1 20 0"/>` +
+    `<path class="a3" d="M5 12.86a10 10 0 0 1 14 0"/>` +
+    `<path class="a2" d="M8.5 16.43a5 5 0 0 1 7 0"/>` +
+    `<circle class="a1" cx="12" cy="20" r="1.6" fill="currentColor" stroke="none"/>` +
+    `</svg>`;
+}
+// Unlit arcs are drawn in --bd so the glyph keeps its shape; lit arcs take the
+// wrapper's currentColor (--th, like the battery). Level 1 turns it red.
+function sqCss() {
+  return `.sq{display:flex;align-items:center;color:var(--th)}
+.sq svg{display:block}
+.sq .a2,.sq .a3,.sq .a4{stroke:var(--bd)}
+.sq .a1{fill:var(--bd)}
+.sq[data-level="1"] .a1,
+.sq[data-level="2"] .a1,
+.sq[data-level="3"] .a1,
+.sq[data-level="4"] .a1{fill:currentColor}
+.sq[data-level="2"] .a2,
+.sq[data-level="3"] .a2,.sq[data-level="3"] .a3,
+.sq[data-level="4"] .a2,.sq[data-level="4"] .a3,.sq[data-level="4"] .a4{stroke:currentColor}
+.sq[data-level="1"]{color:var(--danger)}`;
+}
+// In-place update on every hass push (no re-render of the tree).
+function sqApply(wrap, info, hidden) {
+  if (!wrap) return;
+  wrap.style.display = hidden ? "none" : "flex";
+  if (wrap.dataset.level !== String(info.level)) wrap.dataset.level = String(info.level);
+  if (wrap.title !== info.title) wrap.title = info.title;
+}
 
 // ── Editor ──
 // Build the DOM once, then update values in place. HA pushes a fresh `hass`
@@ -668,6 +773,17 @@ class SonoffValveCard extends HTMLElement {
     return s.state === "unavailable" || s.state === "unknown" || s.state === "none";
   }
   _isOffline() { return this._chOffline("1") && this._chOffline("2"); }
+  // Signal entities of the device (see sqResolve). Not stored in the config:
+  // resolved at runtime and re-scanned once a minute so a diagnostic entity
+  // the user enables later is picked up without an editor visit.
+  _sqIds() {
+    const now = Date.now();
+    if (!this._sqCache || now - (this._sqAt || 0) > 60000) {
+      this._sqCache = sqResolve(this._hass, this._deviceId);
+      this._sqAt = now;
+    }
+    return this._sqCache;
+  }
   // ── Channel naming ──
   // The letter lives on the button and never varies; the caption below it
   // carries the name and nothing else, so it is empty until you set one. The
@@ -1032,6 +1148,7 @@ ha-card{overflow:hidden}
 .bs{width:18px;height:10px;border:1.2px solid var(--th);border-radius:2px;position:relative;overflow:hidden}
 .bf{position:absolute;inset:1px;background:var(--accent);border-radius:1px}
 .bp{width:2px;height:5px;background:var(--th);border-radius:0 1px 1px 0;margin-left:-1px}
+${sqCss()}
 .badge{font-size:11px;font-weight:500;padding:3px 10px;border-radius:20px;transition:all .3s}
 .badge.off{background:var(--bd);color:var(--th)}
 .badge.active{background:var(--accent-dim);color:var(--accent)}
@@ -1123,6 +1240,7 @@ input[type=number]{-moz-appearance:textfield}
     </div>
     <div class="hr">
       <span class="badge off"></span>
+      <div class="sq" id="sq-wrap" data-level="0" style="display:none">${sqSvg()}</div>
       ${hasBatt ? `<div class="bt" id="bt-wrap" style="display:none"><div class="bs"><div class="bf" style="width:0%"></div></div><div class="bp"></div><span class="batt-pct"></span></div>` : ""}
     </div>
   </div>
@@ -1182,6 +1300,7 @@ input[type=number]{-moz-appearance:textfield}
     this._el = {
       tt: q(".tt"), badge: q(".badge"),
       battWrap: $("bt-wrap"), bf: q(".bf"), battPct: q(".batt-pct"),
+      sqWrap: $("sq-wrap"),
       cfgBanner: $("cfg-banner"), intgMissing: $("intg-missing"), offBanner: $("off-banner"),
       actionSec: $("action-sec"),
       bl: $("bl"), bt: $("bt"),
@@ -1241,6 +1360,10 @@ input[type=number]{-moz-appearance:textfield}
         if (el.bf) el.bf.style.width = Math.min(100, batt) + "%";
         this._txt(el.battPct, Math.round(batt) + "%");
       }
+    }
+    if (el.sqWrap) {
+      const sq = sqRead(this._hass, this._sqIds());
+      sqApply(el.sqWrap, sq, offline || fatal || !sq.present);
     }
     let bTxt, bCls;
     if (offline) { bTxt = t("offline"); bCls = "offline"; }

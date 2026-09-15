@@ -91,8 +91,9 @@ def history_signal(switch_entity: str) -> str:
 URL_BASE = f"/{DOMAIN}"
 
 # Lovelace JS modules to auto-register as dashboard resources. The version is
-# appended as a ?v= query string so a version bump invalidates the browser
-# cache without users having to clear it manually.
+# appended as a ?v= query string, followed by a short hash of the file content
+# (computed at registration), so both a version bump and a rebuilt card
+# invalidate the browser cache without users having to clear it manually.
 JSMODULES = [
     {"filename": "sonoff-valve-card.js", "version": VERSION},
 ]

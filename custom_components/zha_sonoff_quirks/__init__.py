@@ -36,6 +36,7 @@ a single click.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from pathlib import Path
 
@@ -211,6 +212,14 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     async_when_setup(hass, "lovelace", _async_register_lovelace_resource)
 
 
+
+def _bundle_hash(path: Path) -> str:
+    """Short content hash of a served card file, or "" if it cannot be read."""
+    try:
+        return hashlib.sha1(path.read_bytes()).hexdigest()[:8]
+    except OSError:
+        return ""
+
 async def _async_register_lovelace_resource(
     hass: HomeAssistant, _component: str
 ) -> None:
@@ -254,9 +263,19 @@ async def _async_register_lovelace_resource(
         _LOGGER.warning("Could not load Lovelace resources: %s", err)
         return
 
+    www_dir = Path(__file__).parent / "www"
     for module in JSMODULES:
         url = f"{URL_BASE}/{module['filename']}"
+        # VERSION only changes at release time, but the card ships with every
+        # commit: a short hash of the file content rides after it so any
+        # rebuilt card gets a fresh URL and no browser / companion-app cache
+        # survives it (same scheme as tuya-cards-for-ha).
+        digest = await hass.async_add_executor_job(
+            _bundle_hash, www_dir / module["filename"]
+        )
         versioned_url = f"{url}?v={module['version']}"
+        if digest:
+            versioned_url += f"-{digest}"
         found_id: str | None = None
         try:
             items = resources.async_items()
