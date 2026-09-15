@@ -33,10 +33,6 @@
       "name": "Liters🪣💧 (🌱volume irrigation)",
       "description": "Volume: opens the chosen line of the SONOFF SWV-ZF2 valve; the valve closes it by itself once the target liters have been delivered.",
       "fields": {
-        "device_id": {
-          "name": "Device",
-          "description": "The SONOFF SWV-ZF2 valve to irrigate with."
-        },
         "channel": {
           "name": "Line",
           "description": "Which of the two valve lines to open (A or B, as printed on the device)."
@@ -55,10 +51,6 @@
       "name": "Minutes⏰💧 (🌱timed irrigation)",
       "description": "Time: opens the chosen line of the SONOFF SWV-ZF2 valve; the valve closes it by itself when the set minutes are up.",
       "fields": {
-        "device_id": {
-          "name": "Device",
-          "description": "The SONOFF SWV-ZF2 valve to irrigate with."
-        },
         "channel": {
           "name": "Line",
           "description": "Which of the two valve lines to open (A or B, as printed on the device)."

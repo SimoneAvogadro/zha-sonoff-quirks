@@ -121,18 +121,28 @@ device-centric services, so automations don't need to know the entity layout:
 
 ```yaml
 action: zha_sonoff_quirks.irrigation_by_liters
+target:
+  device_id: abc123...        # target picker (SONOFF SWV-ZF2 only)
 data:
-  device_id: abc123...        # device picker (SONOFF SWV-ZF2 only)
   channel: "2"                # radio buttons: Line A / Line B
   liters: 250
   fail_safe_minutes: 60       # optional; leaves the current value if omitted
 
 action: zha_sonoff_quirks.irrigation_by_minutes
-data:
+target:
   device_id: abc123...
+data:
   channel: "1"
   minutes: 15
 ```
+
+The valve is a standard HA **target**, which is also what lists the two
+services in the automation editor's *"By target"* tab when you select the
+valve device (HA device actions cannot do that since 2026.8 — see TODO #12).
+The target picks the *device* only; the line is always `channel`, and a target
+holding more than one valve is rejected. Automations saved before the target existed, with
+`device_id` under `data:`, keep working unchanged; the editor shows them with a
+"No target set" badge until you re-pick the valve and save.
 
 `channel` takes `"1"`/`"2"`, the values the radio buttons send — and accepts
 `"A"`/`"B"` (either case) as aliases for them, so a hand-written automation can

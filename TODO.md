@@ -198,7 +198,19 @@ corse precedenti orfane sotto la vecchia chiave (non perse: restano nel file).
 Fix corretto: chiavare per `id` di registry dello switch (stabile ai rename)
 con migrazione dello store. Rimandato: rename raro, danno limitato.
 
-## 12. Device action — PARCHEGGIATE nel branch `device_actions`
+## 12. Device action — SUPERATE dal `target:` dei servizi (2026-09-15)
+
+**Risolto per un'altra via.** La tab "Per destinazione" dell'editor non usa le
+device action: chiama il comando WS `get_services_for_target`
+(`components/websocket_api/automation.py`), che elenca i servizi con un
+`target:` il cui filtro `entity` combacia con un'entità del device. I due
+servizi dichiarano quindi `target:` (filtro device sui modelli SWV-ZF2*, filtro
+entità sui nostri sensori storico `device_class: timestamp`) e compaiono per la
+valvola accanto a on/off dello switch. `channel` resta un campo: il selettore di
+linea coi nomi del dispositivo (l'obiettivo originale della 0.10.0) resta
+impossibile in un servizio. Il branch `device_actions` resta parcheggiato, per
+storia. Sotto, l'analisi originale.
+
 
 Servivano a una cosa sola: mostrare nell'editor automazioni un selettore di
 linea etichettato coi nomi del dispositivo (`A — Giardino`), impossibile in un

@@ -1,19 +1,37 @@
 # Field metadata for the irrigation services. Names/descriptions live in
 # strings.json + translations/, keyed by the same service and field names;
 # this file only carries the selectors the frontend renders.
+#
+# The valve is picked as a standard HA service TARGET. Declaring `target:`
+# (instead of a plain `device_id` field) is what makes the two services show
+# up in the automation editor's "by target" tab when the valve device is
+# selected: the frontend asks `get_services_for_target`, which lists every
+# service whose target ENTITY filter matches one of the device's entities —
+# here this integration's own per-line history sensors (device_class
+# timestamp), so exactly the SWV-ZF2 valves match. Device actions cannot do
+# this since HA 2026.8 (TODO #12): they are only asked of the device's owning
+# integration (ZHA), never of one that merely attaches entities to it.
+#
+# The same filters drive the target picker (`device` lists the SWV-ZF2*
+# models, `entity` the two "Irrigation history CH1/CH2" sensors). The target
+# only chooses the DEVICE; the line is always `channel`. A target must resolve
+# to ONE valve (the service rejects more). `device_id` is still accepted in
+# `data:` by the service schema, so automations saved before the target
+# existed keep working; it is just no longer offered as a separate field.
 irrigation_by_liters:
+  target:
+    device:
+      - manufacturer: SONOFF
+        model: SWV-ZF2
+      - manufacturer: SONOFF
+        model: SWV-ZF2U
+      - manufacturer: SONOFF
+        model: SWV-ZF2E
+    entity:
+      - integration: zha_sonoff_quirks
+        domain: sensor
+        device_class: timestamp
   fields:
-    device_id:
-      required: true
-      selector:
-        device:
-          filter:
-            - manufacturer: SONOFF
-              model: SWV-ZF2
-            - manufacturer: SONOFF
-              model: SWV-ZF2U
-            - manufacturer: SONOFF
-              model: SWV-ZF2E
     channel:
       required: true
       example: "1"
@@ -46,18 +64,19 @@ irrigation_by_liters:
           mode: box
 
 irrigation_by_minutes:
+  target:
+    device:
+      - manufacturer: SONOFF
+        model: SWV-ZF2
+      - manufacturer: SONOFF
+        model: SWV-ZF2U
+      - manufacturer: SONOFF
+        model: SWV-ZF2E
+    entity:
+      - integration: zha_sonoff_quirks
+        domain: sensor
+        device_class: timestamp
   fields:
-    device_id:
-      required: true
-      selector:
-        device:
-          filter:
-            - manufacturer: SONOFF
-              model: SWV-ZF2
-            - manufacturer: SONOFF
-              model: SWV-ZF2U
-            - manufacturer: SONOFF
-              model: SWV-ZF2E
     channel:
       required: true
       example: "1"

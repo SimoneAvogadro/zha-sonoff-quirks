@@ -12,10 +12,20 @@ The services registered here bundle that multi-entity sequence into a single
 device-centric call so cards and automations don't have to know the entity
 layout:
 
-    zha_sonoff_quirks.irrigation_by_liters(device_id, channel, liters,
+    zha_sonoff_quirks.irrigation_by_liters(target | device_id, channel, liters,
                                            fail_safe_minutes?)
-    zha_sonoff_quirks.irrigation_by_minutes(device_id, channel, minutes,
+    zha_sonoff_quirks.irrigation_by_minutes(target | device_id, channel, minutes,
                                             fail_safe_minutes?)
+
+The valve is addressed by a standard HA service *target* (`services.yaml`
+declares ``target:``), which is what makes the two services show up in the
+automation editor's "by target" tab when the valve device is selected — device
+actions cannot do that since HA 2026.8 (see TODO #12). HA merges the target
+into ``call.data`` before validation, so ``device_id`` / ``entity_id`` /
+``area_id`` / ``floor_id`` / ``label_id`` are plain data fields here, and an
+automation saved before the target existed (``data: {device_id: …}``) keeps
+working unchanged. The target only picks the DEVICE; ``channel`` stays the
+one and only way to choose the line.
 
 There is deliberately no server-side timer or monitoring task: the SWV-ZF2
 auto-closes on-device, so once the switch is on the job is done. Stopping a
@@ -28,12 +38,15 @@ import logging
 from typing import Any
 
 from homeassistant.core import Context, HomeAssistant, ServiceCall
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import target as target_helpers
 from homeassistant.util import dt as dt_util
 import voluptuous as vol
 
-from .const import CHANNEL_LABELS, CHANNELS, DOMAIN, normalize_channel
+from .const import CHANNEL_LABELS, CHANNELS, DOMAIN, SWV_MODELS, normalize_channel
 from .helpers import resolve_entities
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,7 +54,6 @@ _LOGGER = logging.getLogger(__name__)
 SERVICE_IRRIGATION_BY_LITERS = "irrigation_by_liters"
 SERVICE_IRRIGATION_BY_MINUTES = "irrigation_by_minutes"
 
-ATTR_DEVICE_ID = "device_id"
 ATTR_CHANNEL = "channel"
 ATTR_LITERS = "liters"
 ATTR_MINUTES = "minutes"
@@ -74,32 +86,88 @@ def _channel(value: Any) -> str:
     return channel
 
 
-# Shared fields of both services.
+# Shared fields of both services. The target keys (``device_id`` included —
+# ``cv.ENTITY_SERVICE_FIELDS`` accepts each as a string or a list) come from
+# HA's standard target, merged into call.data; at least one of them is
+# required (``_HAS_TARGET`` below), so a call that names no valve at all is
+# rejected by the schema, before the handler runs.
 _COMMON_FIELDS = {
-    vol.Required(ATTR_DEVICE_ID): cv.string,
+    **cv.ENTITY_SERVICE_FIELDS,
     vol.Required(ATTR_CHANNEL): _channel,
     vol.Optional(ATTR_FAIL_SAFE_MINUTES): vol.All(
         vol.Coerce(int), vol.Range(min=0, max=719)
     ),
 }
+_HAS_TARGET = cv.has_at_least_one_key(*cv.ENTITY_SERVICE_FIELDS)
 
-LITERS_SCHEMA = vol.Schema(
-    {
-        **_COMMON_FIELDS,
-        vol.Required(ATTR_LITERS): vol.All(
-            vol.Coerce(int), vol.Range(min=1, max=10000)
-        ),
-    }
+LITERS_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            **_COMMON_FIELDS,
+            vol.Required(ATTR_LITERS): vol.All(
+                vol.Coerce(int), vol.Range(min=1, max=10000)
+            ),
+        }
+    ),
+    _HAS_TARGET,
 )
 
-MINUTES_SCHEMA = vol.Schema(
-    {
-        **_COMMON_FIELDS,
-        vol.Required(ATTR_MINUTES): vol.All(
-            vol.Coerce(int), vol.Range(min=1, max=719)
-        ),
-    }
+MINUTES_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            **_COMMON_FIELDS,
+            vol.Required(ATTR_MINUTES): vol.All(
+                vol.Coerce(int), vol.Range(min=1, max=719)
+            ),
+        }
+    ),
+    _HAS_TARGET,
 )
+
+
+def _device_from_call(hass: HomeAssistant, call: ServiceCall) -> str:
+    """Resolve the service target to the ONE SWV-ZF2 device it designates.
+
+    Devices come straight from the target (or through an area / floor /
+    label); an entity target — a history sensor of this integration, which
+    is what the target picker's entity filter offers, or any other entity of
+    the valve — is mapped through its registry device. Only SWV-ZF2* devices
+    count, so a stray device in a targeted area is ignored rather than
+    driven. Exactly one valve is required: the run is keyed by its channel
+    switch, and an automation that wants two valves adds two actions. Both
+    failure modes are user errors, reported as ServiceValidationError so the
+    automation editor / Developer Tools show the message, not a traceback.
+    """
+    selection = target_helpers.TargetSelection(call.data)
+    if not selection.has_any_target:
+        # ``device_id: none`` & co. pass the schema but select nothing.
+        raise ServiceValidationError("No SONOFF SWV-ZF2 valve was targeted")
+    extracted = target_helpers.async_extract_referenced_entity_ids(
+        hass, selection, expand_group=False, primary_entities_only=False
+    )
+    ent_reg = er.async_get(hass)
+    candidates = set(extracted.referenced_devices)
+    for entity_id in extracted.referenced:
+        entry = ent_reg.async_get(entity_id)
+        if entry is not None and entry.device_id is not None:
+            candidates.add(entry.device_id)
+
+    dev_reg = dr.async_get(hass)
+    valves: dict[str, str] = {}
+    for device_id in candidates:
+        device = dev_reg.async_get(device_id)
+        if device is not None and device.model in SWV_MODELS:
+            valves[device_id] = device.name_by_user or device.name or device_id
+    if not valves:
+        raise ServiceValidationError(
+            "The target contains no SONOFF SWV-ZF2 valve"
+        )
+    if len(valves) > 1:
+        raise ServiceValidationError(
+            "The target contains several SONOFF SWV-ZF2 valves "
+            f"({', '.join(sorted(valves.values()))}); pick one valve per action"
+        )
+    return next(iter(valves))
 
 
 async def _async_start_irrigation(
@@ -228,7 +296,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
         """Start a volume-limited run ("capacity" mode)."""
         await _async_start_irrigation(
             hass,
-            call.data[ATTR_DEVICE_ID],
+            _device_from_call(hass, call),
             call.data[ATTR_CHANNEL],
             MODE_OPTION_CAPACITY,
             "volume",
@@ -242,7 +310,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
         """Start a time-limited run ("duration" mode)."""
         await _async_start_irrigation(
             hass,
-            call.data[ATTR_DEVICE_ID],
+            _device_from_call(hass, call),
             call.data[ATTR_CHANNEL],
             MODE_OPTION_DURATION,
             "duration",
