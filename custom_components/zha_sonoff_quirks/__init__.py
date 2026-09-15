@@ -51,7 +51,11 @@ from homeassistant.setup import async_when_setup
 from . import quirks  # noqa: F401
 from .const import DOMAIN, JSMODULES, PLATFORMS, SWV_MODELS, URL_BASE
 from .history import SwvRunLog
-from .services import async_setup_services, async_unload_services
+from .services import (
+    async_refresh_service_descriptions,
+    async_setup_services,
+    async_unload_services,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -80,7 +84,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await run_log.async_unload()
         raise
     _async_schedule_quirk_check(hass)
+    # Line-name labels in the services' channel radio (see services.py). The
+    # first publish happens now; the text platform re-publishes when a channel
+    # switch appears later (ZHA reload), and the options listener when a line
+    # is renamed. The listener does NOT reload the entry — text.py relies on
+    # that when it writes the names.
+    await async_refresh_service_descriptions(hass, entry)
+    entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
     return True
+
+
+async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Config entry options changed (a line was renamed): refresh the labels."""
+    await async_refresh_service_descriptions(hass, entry)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

@@ -144,6 +144,14 @@ holding more than one valve is rejected. Automations saved before the target exi
 `device_id` under `data:`, keep working unchanged; the editor shows them with a
 "No target set" badge until you re-pick the valve and save.
 
+The *Line* radio shows the names you gave the lines (the two *Line name*
+text entities on the device page): `A — Giardino` / `B — Prato davanti`, an
+unnamed line as its bare letter. The labels follow a rename within a few
+seconds, no page reload needed. This only works while a single SWV valve is
+registered: `services.yaml` is one description for every valve and the form
+does not know which valve the target holds, so with two or more valves the
+radio falls back to the generic *Line A / Line B*.
+
 `channel` takes `"1"`/`"2"`, the values the radio buttons send — and accepts
 `"A"`/`"B"` (either case) as aliases for them, so a hand-written automation can
 use the letters printed on the valve. The letters are normalised on the way in;

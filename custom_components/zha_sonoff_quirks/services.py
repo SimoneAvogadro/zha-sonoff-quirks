@@ -27,6 +27,17 @@ automation saved before the target existed (``data: {device_id: …}``) keeps
 working unchanged. The target only picks the DEVICE; ``channel`` stays the
 one and only way to choose the line.
 
+``services.yaml`` is static, but the line radio can still show the names the
+user gave the lines (the ``text`` line-name entities, stored in the config
+entry options): ``async_publish_service_descriptions`` rewrites the two
+service descriptions at runtime through ``async_set_service_schema``, with
+``A — Giardino`` style option labels, and ``async_refresh_service_descriptions``
+re-registers the services afterwards so the frontend (which refetches all
+service descriptions a few seconds after a ``service_registered`` event) picks
+the new labels up without a page reload. Labels are only possible while
+exactly ONE SWV valve is registered: the form does not know which device the
+target holds, and one label set must fit every valve.
+
 There is deliberately no server-side timer or monitoring task: the SWV-ZF2
 auto-closes on-device, so once the switch is on the job is done. Stopping a
 run early is a plain ``switch.turn_off`` on the channel switch.
@@ -34,25 +45,43 @@ run early is a plain ``switch.turn_off`` on the channel switch.
 
 from __future__ import annotations
 
+import copy
 import logging
+from pathlib import Path
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Context, HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import target as target_helpers
+from homeassistant.helpers.service import async_set_service_schema
 from homeassistant.util import dt as dt_util
+from homeassistant.util.yaml import load_yaml_dict
 import voluptuous as vol
 
-from .const import CHANNEL_LABELS, CHANNELS, DOMAIN, SWV_MODELS, normalize_channel
-from .helpers import resolve_entities
+from .const import (
+    CHANNEL_LABELS,
+    CHANNELS,
+    DOMAIN,
+    OPTIONS_LINE_NAMES,
+    SWV_MODELS,
+    normalize_channel,
+)
+from .helpers import find_swv_switches, resolve_entities
 
 _LOGGER = logging.getLogger(__name__)
 
 SERVICE_IRRIGATION_BY_LITERS = "irrigation_by_liters"
 SERVICE_IRRIGATION_BY_MINUTES = "irrigation_by_minutes"
+
+_SERVICES_YAML = Path(__file__).parent / "services.yaml"
+# hass.data[DOMAIN] keys used by the description publisher.
+_DATA_SERVICES_YAML = "services_yaml"  # parsed services.yaml, loaded once
+_DATA_HANDLERS = "service_handlers"  # {service: (handler, schema)} for re-registration
+_DATA_PUBLISHED_LABELS = "published_channel_labels"  # last labels pushed to HA
 
 ATTR_CHANNEL = "channel"
 ATTR_LITERS = "liters"
@@ -320,15 +349,114 @@ def async_setup_services(hass: HomeAssistant) -> None:
             call.context,
         )
 
-    hass.services.async_register(
-        DOMAIN, SERVICE_IRRIGATION_BY_LITERS, _handle_liters, schema=LITERS_SCHEMA
-    )
-    hass.services.async_register(
-        DOMAIN, SERVICE_IRRIGATION_BY_MINUTES, _handle_minutes, schema=MINUTES_SCHEMA
-    )
+    handlers = {
+        SERVICE_IRRIGATION_BY_LITERS: (_handle_liters, LITERS_SCHEMA),
+        SERVICE_IRRIGATION_BY_MINUTES: (_handle_minutes, MINUTES_SCHEMA),
+    }
+    hass.data.setdefault(DOMAIN, {})[_DATA_HANDLERS] = handlers
+    for service, (handler, schema) in handlers.items():
+        hass.services.async_register(DOMAIN, service, handler, schema=schema)
 
 
 def async_unload_services(hass: HomeAssistant) -> None:
     """Remove the irrigation services (called from ``async_unload_entry``)."""
     hass.services.async_remove(DOMAIN, SERVICE_IRRIGATION_BY_LITERS)
     hass.services.async_remove(DOMAIN, SERVICE_IRRIGATION_BY_MINUTES)
+    data = hass.data.get(DOMAIN, {})
+    data.pop(_DATA_HANDLERS, None)
+    data.pop(_DATA_PUBLISHED_LABELS, None)
+
+
+# ---------------------------------------------------------------------------
+# Runtime service descriptions: the line radio labelled with the line names.
+# ---------------------------------------------------------------------------
+
+
+def _channel_labels(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, str] | None:
+    """Option labels for the ``channel`` radio, or None to keep the generic ones.
+
+    ``A — Giardino`` for a named line, the bare letter for an unnamed one.
+    None when no line is named (nothing to gain over the translated "Line A /
+    Line B") and when several SWV valves are registered: the description is
+    one for all of them and the form cannot know which valve the target
+    holds, so per-device names would be wrong for every valve but one.
+    """
+    switches = find_swv_switches(hass)
+    devices = {info["device_id"] for info in switches}
+    if len(devices) != 1:
+        return None
+    names = entry.options.get(OPTIONS_LINE_NAMES) or {}
+    by_channel = {info["channel"]: names.get(info["switch"], "") for info in switches}
+    if not any(by_channel.values()):
+        return None
+    labels: dict[str, str] = {}
+    for channel in CHANNELS:
+        letter = CHANNEL_LABELS[channel]
+        name = by_channel.get(channel, "")
+        labels[channel] = f"{letter} — {name}" if name else letter
+    return labels
+
+
+async def _async_services_yaml(hass: HomeAssistant) -> dict[str, Any]:
+    """The parsed services.yaml, loaded once per HA session."""
+    data = hass.data.setdefault(DOMAIN, {})
+    if _DATA_SERVICES_YAML not in data:
+        data[_DATA_SERVICES_YAML] = await hass.async_add_executor_job(
+            load_yaml_dict, str(_SERVICES_YAML)
+        )
+    return data[_DATA_SERVICES_YAML]
+
+
+async def async_publish_service_descriptions(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> bool:
+    """Push the two service descriptions to HA, with the current line labels.
+
+    Starts from services.yaml (so selectors, target and field layout have a
+    single source of truth) and, when `_channel_labels` has something to say,
+    swaps the ``channel`` select's translated options for labelled ones.
+    Returns True when the labels differ from the last published set — the
+    caller decides whether that is worth a service re-registration.
+    """
+    data = hass.data.setdefault(DOMAIN, {})
+    labels = _channel_labels(hass, entry)
+    if _DATA_PUBLISHED_LABELS in data and data[_DATA_PUBLISHED_LABELS] == labels:
+        return False
+    yaml_desc = await _async_services_yaml(hass)
+    for service in (SERVICE_IRRIGATION_BY_LITERS, SERVICE_IRRIGATION_BY_MINUTES):
+        desc = copy.deepcopy(yaml_desc.get(service) or {})
+        if labels:
+            select = desc["fields"][ATTR_CHANNEL]["selector"]["select"]
+            select["options"] = [
+                {"value": channel, "label": labels[channel]} for channel in CHANNELS
+            ]
+            # The translation would win over the labels in the frontend.
+            select.pop("translation_key", None)
+        async_set_service_schema(hass, DOMAIN, service, desc)
+    data[_DATA_PUBLISHED_LABELS] = labels
+    _LOGGER.debug("Published service descriptions with channel labels %s", labels)
+    return True
+
+
+async def async_refresh_service_descriptions(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    """Re-publish the descriptions and make connected frontends reload them.
+
+    ``async_set_service_schema`` alone is invisible to an open browser: the
+    frontend caches ``hass.services`` and only refetches the whole set a few
+    seconds after a ``service_registered`` event. Re-registering the two
+    services (remove + register) fires exactly that. Done only when the labels
+    actually changed, so a startup or a no-op rename does not churn events.
+    """
+    if not await async_publish_service_descriptions(hass, entry):
+        return
+    handlers = hass.data.get(DOMAIN, {}).get(_DATA_HANDLERS)
+    if not handlers:
+        return
+    # HA's per-service description cache survives the remove/register pair
+    # (nothing evicts it), so the descriptions published above are what the
+    # frontend's refetch will see.
+    for service, (handler, schema) in handlers.items():
+        hass.services.async_remove(DOMAIN, service)
+        hass.services.async_register(DOMAIN, service, handler, schema=schema)

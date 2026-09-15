@@ -206,10 +206,14 @@ device action: chiama il comando WS `get_services_for_target`
 `target:` il cui filtro `entity` combacia con un'entità del device. I due
 servizi dichiarano quindi `target:` (filtro device sui modelli SWV-ZF2*, filtro
 entità sui nostri sensori storico `device_class: timestamp`) e compaiono per la
-valvola accanto a on/off dello switch. `channel` resta un campo: il selettore di
-linea coi nomi del dispositivo (l'obiettivo originale della 0.10.0) resta
-impossibile in un servizio. Il branch `device_actions` resta parcheggiato, per
-storia. Sotto, l'analisi originale.
+valvola accanto a on/off dello switch. `channel` resta un campo, ma il
+selettore di linea coi nomi del dispositivo (l'obiettivo originale della
+0.10.0) c'è lo stesso: `services.py` riscrive la descrizione dei servizi a
+runtime con `async_set_service_schema` (etichette `A — Giardino`) e ri-registra
+i servizi a ogni rinomina, così il frontend ricarica le descrizioni. Limite
+dichiarato: etichette solo con UNA valvola registrata, perché la descrizione è
+unica per tutte. Il branch `device_actions` resta parcheggiato, per storia.
+Sotto, l'analisi originale.
 
 
 Servivano a una cosa sola: mostrare nell'editor automazioni un selettore di

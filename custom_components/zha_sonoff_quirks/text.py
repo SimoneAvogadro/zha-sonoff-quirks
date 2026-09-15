@@ -9,8 +9,9 @@ device page instead of a card editor.
 One entity per channel switch, ``EntityCategory.CONFIG`` so it lands under
 *Configuration* on the device page. The value is stored in the config entry's
 options (``entry.options["line_names"]``, keyed by switch entity_id): unlike
-``RestoreEntity`` it never expires, and since ``__init__.py`` registers no
-update listener, writing it triggers no reload.
+``RestoreEntity`` it never expires, and the only update listener
+``__init__.py`` registers refreshes the services' line labels (services.py)
+without reloading anything, so writing it triggers no reload.
 
 The unique_id embeds the channel FIRST (see ``line_name_unique_id``) because
 the card resolves these by prefix — the tail is the switch's entity_id, which
@@ -35,6 +36,7 @@ from .const import (
 )
 from .entity import SwvAttachedEntity
 from .helpers import find_swv_switches
+from .services import async_refresh_service_descriptions
 
 
 async def async_setup_entry(
@@ -62,6 +64,10 @@ async def async_setup_entry(
             )
         if new_entities:
             async_add_entities(new_entities)
+            # A channel switch appearing late (ZHA reloaded after setup) is
+            # what turns "no valve yet" into "one valve": give the services
+            # their line labels now instead of at the next restart.
+            hass.async_create_task(async_refresh_service_descriptions(hass, entry))
 
     _add_new_channels()
 
