@@ -247,16 +247,47 @@ valvola ma in un dispositivo figlio.
 Da verificare prima di provarci: cosa succede al device figlio quando la
 valvola ZHA viene rimossa.
 
-## 13. ZBMINIR2: inching (0.12.0) — DA VERIFICARE SUL DISPOSITIVO
+## 13. ZBMINIR2: inching (0.12.0) — FUNZIONA SUL DISPOSITIVO (2026-10-31), restano punti minori
 
 Override della quirk built-in `zhaquirks.sonoff.zbminir2` per i due SONOFF
-ZBMINIR2 di casa (fw `0x00001100` e `0x00001004`, quest'ultimo è la luce delle
-scale): tre entità di inching su un cluster locale `0xFBFE`, più le quattro
-built-in replicate con gli stessi unique_id. Protocollo da Z2M
+ZBMINIR2 di casa: tre entità di inching su un cluster locale `0xFBFE`, più le
+quattro built-in replicate con gli stessi unique_id. Protocollo da Z2M
 (`inchingControlSet`, comando `protocolData` `0x01` su `0xFC11`, codice
-produttore `0x1286`) e dalle PR upstream #5135 / #5317. I test offline
-verificano il frame byte per byte contro i vettori calcolati dal convertitore
-Z2M, ma **nessun comando è ancora stato inviato a un relè vero**.
+produttore `0x1286`) e dalle PR upstream #5135 / #5317.
+
+### Esito sul dispositivo (2026-10-31, HA 2026.10.4, zha 2.3.1)
+
+Entrambi i relè sono ora sul fw `0x00001100`: la luce delle scale, che era su
+`0x00001004`, è stata aggiornata prima della prova.
+
+- **Cold boot (punto 1) — OK.** Un solo warning nel log, con la SWV e i due
+  ZBMINIR2 nello stesso messaggio (`SWV device(s) SONOFF SWV-ZF2 initialized
+  without the quirk; ZBMINIR2 device(s) SONOFF ZBMINIR2, SONOFF ZBMINIR2
+  initialized on ZHA's built-in quirk, without the inching override ...
+  reloading ZHA once`), un solo reload di ZHA. Nessun warning di ritiro
+  dell'override.
+- **entity_id invariati (punto 2) — OK.** *Turbo mode* e *Network LED* della
+  luce scale mantengono entity_id e storico continuo (solo il breve
+  `unavailable` del reload); le tre entità di inching sono comparse su
+  entrambi i relè.
+- **Scritture accettate — OK.** Diversi valori di *Inching time* e *Inching*
+  on/off scritti da HA senza errori in UI e senza `Device rejected the inching
+  command`. Quindi il relè risponde alla Default Response con status SUCCESS:
+  con uno status diverso `write_attributes` restituisce record di errore e
+  ZHA solleva l'eccezione. La regola di decisione dei punti 3–4 non serve.
+- **Inching 2 s, `Turn off after on`, luce scale — OK.** Relè acceso da HA
+  alle 19:45:06.03 UTC, spento da solo alle 19:45:08.03: 2,0 s esatti.
+
+### Residuo
+
+- **Punto 3 non più verificabile**: nessun relè di casa è ancora su
+  `0x00001004`. Il comportamento dei firmware più vecchi resta ignoto.
+- Punto 4 parziale: provati 2 s accendendo da HA. Mancano un tempo lungo (es.
+  180 s) e l'accensione dall'interruttore fisico.
+- Punto 5 (persistenza dopo un riavvio di HA), punto 6 (`Turn on after off`) e
+  punto 7 (frame nel log di debug) ancora da fare.
+
+La checklist originale resta qui sotto per i punti aperti.
 
 Verifiche, in quest'ordine:
 
@@ -333,4 +364,5 @@ non si applica e quei relè non causano reload. Con zha-quirks < 2.0 (HA
 2024.8+ lo consente) l'override non si carica: un solo warning all'avvio,
 senza traceback, e la quirk della SWV funziona come prima.
 
-Il tag `v0.12.0` si crea solo dopo l'esito positivo di queste verifiche.
+Tag `v0.12.0` creato il 2026-10-31 dopo la conferma sul dispositivo (cold
+boot, scritture accettate, inching da 2 s). I punti residui non lo bloccano.

@@ -1,15 +1,23 @@
 # zha-sonoff-quirks
 
-Custom ZHA quirk for the **SONOFF SWV-ZF2** — a **dual-channel** Zigbee
-irrigation valve (sold as `SWV-ZF2E` / `SWV-ZF2U` depending on market, same
-firmware `0x00001007`).
+Custom ZHA quirks for SONOFF Zigbee devices, packaged as a Home Assistant
+integration installable from HACS.
 
-On top of upstream support, this quirk adds **control of the valve's on-device
-autonomous irrigation**: set a duration or a volume, turn the channel's switch
-on, and **the valve closes by itself** — even if Home Assistant is offline.
+## Supported devices
 
-Since 0.12.0 the integration also adds **inching** (automatic switch-back after
-a delay) to the **SONOFF ZBMINIR2** relay — see
+| Device | Models | What the quirk adds | Verified on |
+|---|---|---|---|
+| SONOFF SWV-ZF2 dual-channel irrigation valve | `SWV-ZF2`, `SWV-ZF2E`, `SWV-ZF2U` | on-device autonomous irrigation (duration / volume), usage sensors, run history, Lovelace card | fw `0x00001007` |
+| SONOFF ZBMINIR2 Zigbee Mini R2 relay | `ZBMINIR2` | **inching** (automatic switch-back after a delay), on top of ZHA's own entities | fw `0x00001100` |
+
+**SWV-ZF2** — sold as `SWV-ZF2E` / `SWV-ZF2U` depending on market, same
+firmware `0x00001007`. On top of upstream support, the quirk adds **control of
+the valve's on-device autonomous irrigation**: set a duration or a volume, turn
+the channel's switch on, and **the valve closes by itself** — even if Home
+Assistant is offline. Most of this README is about the valve.
+
+**ZBMINIR2** (since 0.12.0) — the relay switches itself back off (or on) once
+a delay has elapsed, timed on the relay. See
 [SONOFF ZBMINIR2: inching](#sonoff-zbminir2-inching).
 
 ## What it exposes
@@ -382,8 +390,14 @@ manufacturer code `0x1286`, with an 11-byte payload — comes from Zigbee2MQTT's
 [zigbee-herdsman-converters](https://github.com/Koenkk/zigbee-herdsman-converters)
 (`src/devices/sonoff.ts`). Upstream PR
 [zigpy/zha-device-handlers#5135](https://github.com/zigpy/zha-device-handlers/pull/5135),
-not merged at the time of writing, sends the same bytes. The on-device checks
-still to do are listed in [TODO.md](TODO.md) #13.
+not merged at the time of writing, sends the same bytes.
+
+**Verified on the device** (2026-10-31, two ZBMINIR2 on fw `0x00001100`): after
+a cold start ZHA was reloaded exactly once and both relays came up on the
+override, with their existing entities unchanged; the settings were accepted
+without errors, and with *Inching time* = 2 s the relay turned itself off 2.0 s
+after turning on. Still to check: older firmware, the *Turn on after off* mode
+and persistence across a restart — see [TODO.md](TODO.md) #13.
 
 ## Development
 
@@ -436,9 +450,13 @@ Assistant imports, so it is tested directly.
 
 See [TODO.md](TODO.md).
 
-**Verified on the device** (fw `0x00001007`): the configuration is global, and
-autonomous closing in `capacity` mode works **on both channels** — the valve
-closes when the volume target is reached, well before the fail-safe.
+**SWV-ZF2, verified on the device** (fw `0x00001007`): the configuration is
+global, and autonomous closing in `capacity` mode works **on both channels** —
+the valve closes when the volume target is reached, well before the fail-safe.
+
+**ZBMINIR2, verified on the device** (fw `0x00001100`): cold-start reload,
+unchanged existing entities, inching accepted and timed correctly. Details and
+open checks in [SONOFF ZBMINIR2: inching](#sonoff-zbminir2-inching).
 
 **Not yet verified**: `duration` mode as a timed auto-close. The `0x501F` feed
 reports it correctly, but the actual closing time has not been measured.

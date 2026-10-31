@@ -1,7 +1,7 @@
 [project]
 name = "zha-sonoff-quirks"
 version = "0.1.0"
-description = "Custom ZHA quirk per SONOFF SWV-ZF2 (dual-channel smart water valve)"
+description = "Custom ZHA quirk per SONOFF SWV-ZF2 (valvola dual-channel) e ZBMINIR2 (inching)"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "Apache-2.0" }
