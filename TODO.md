@@ -246,3 +246,91 @@ valvola ma in un dispositivo figlio.
 
 Da verificare prima di provarci: cosa succede al device figlio quando la
 valvola ZHA viene rimossa.
+
+## 13. ZBMINIR2: inching (0.12.0) — DA VERIFICARE SUL DISPOSITIVO
+
+Override della quirk built-in `zhaquirks.sonoff.zbminir2` per i due SONOFF
+ZBMINIR2 di casa (fw `0x00001100` e `0x00001004`, quest'ultimo è la luce delle
+scale): tre entità di inching su un cluster locale `0xFBFE`, più le quattro
+built-in replicate con gli stessi unique_id. Protocollo da Z2M
+(`inchingControlSet`, comando `protocolData` `0x01` su `0xFC11`, codice
+produttore `0x1286`) e dalle PR upstream #5135 / #5317. I test offline
+verificano il frame byte per byte contro i vettori calcolati dal convertitore
+Z2M, ma **nessun comando è ancora stato inviato a un relè vero**.
+
+Verifiche, in quest'ordine:
+
+0. **Prima di tutto**: attivare il log di debug di `zigpy` e `zhaquirks` (vedi
+   punto 7). Serve per leggere lo status della Default Response ai punti 3 e
+   4, e per accorgersi di un warning `The built-in ZHA quirk for SONOFF
+   ZBMINIR2 ...` all'avvio: se compare, l'override si è ritirato e le verifiche
+   successive non hanno senso.
+1. **Cold boot**: riavvio completo di HA, non solo di ZHA. Atteso nel log **un
+   solo** warning `... ZBMINIR2 device(s) ... initialized on ZHA's built-in
+   quirk, without the inching override ... reloading ZHA once to apply them`
+   (nello stesso messaggio della SWV, se anche lei è partita senza quirk) e un
+   solo reload di ZHA. Dopo il reload, in *Zigbee info* di entrambi i relè la
+   quirk deve risultare
+   `custom_components.zha_sonoff_quirks.quirks.sonoff_zbminir2`.
+2. **entity_id invariati**: annotare PRIMA dell'aggiornamento gli entity_id
+   delle quattro entità esistenti (*External trigger mode*, *Turbo mode*,
+   *Detach relay*, *Network LED*). Dopo: stessi entity_id, stessi nomi
+   personalizzati, storico continuo, nessuna entità duplicata od orfana
+   ("non più fornita"). Compaiono le tre nuove *Inching*, *Inching time*,
+   *Inching mode*.
+3. **Comportamento sul fw `0x00001004`** (luce scale, PRIMA di aggiornarlo):
+   *Inching time* = 180 s, poi *Inching* on. Annotare l'esito **e lo status
+   della Default Response** (dal log di debug, oppure dal warning `Device
+   rejected the inching command: <status>` che compare da solo se non è
+   SUCCESS): errore in UI (status non SUCCESS, o timeout) con le entità
+   rimaste ai valori di prima, oppure comando accettato. **In ogni caso,
+   anche con errore**, verificare se il relè fa davvero lo spegnimento
+   automatico:
+   - un firmware vecchio potrebbe accettare il comando e ignorarlo, e la UI
+     mostrerebbe un inching che non c'è (in quel caso va scritto nel README);
+   - un **timeout** non dimostra che il comando non sia stato applicato: zigpy
+     lo ritrasmette (fino a 3 invii identici) e può essersi persa solo la
+     risposta. Dopo un timeout riscrivere le impostazioni (o *Inching* off)
+     quando il relè risponde di nuovo.
+4. **Inching 180 s sulla luce scale**, dopo aver aggiornato il firmware da
+   `0x00001004`: *Inching* on, *Inching time* 180, *Inching mode*
+   `Turn off after on`. Annotare lo status della Default Response (atteso
+   SUCCESS). Accesa da HA → si spegne da sola dopo ~3 min. Ripetere
+   accendendo dall'interruttore fisico. Poi *Inching* off → resta accesa.
+
+   **Regola di decisione (punti 3 e 4)**: nessuna delle tre implementazioni di
+   riferimento legge lo status della Default Response (Z2M usa
+   `checkStatus=false`, la PR #5135 scarta il risultato, la #5317 non chiede
+   risposta), quindi che il relè risponda SUCCESS quando applica l'inching
+   **non è dimostrato**. Se la UI mostra un errore ma il relè fa comunque
+   l'inching, il dispositivo risponde con uno status non SUCCESS pur
+   applicando il comando: prima del tag va allentato il controllo dello status
+   in `SonoffInchingCluster.write_attributes` (accettare tutto tranne un
+   insieme noto di "non supportato", es. `UNSUP_COMMAND` /
+   `UNSUP_MANUF_CLUSTER_COMMAND`), altrimenti le entità resterebbero per
+   sempre ai default mentre il relè fa l'inching.
+5. **Persistenza al riavvio**: dopo un restart di HA le tre entità mostrano i
+   valori inviati, non i default (off / 1 s / `Turn off after on`).
+6. **Modalità `Turn on after off`**, su un carico innocuo (il relè con fw
+   `0x00001100`): verificare se armarla accende subito il relè (il README lo
+   dà come possibile) e che, dopo uno spegnimento, il relè si riaccenda allo
+   scadere del tempo. Poi rimettere `Turn off after on`.
+7. Log di debug (necessario per i punti 3 e 4, vedi punto 0): con `zigpy` e
+   `zhaquirks` a livello debug, controllare il frame inviato
+   (`05 86 12 <tsn> 01` + 11 byte di payload) e la Default Response del relè
+   (`DefaultResponse(command_id=1, status=...)`).
+
+Limiti noti, voluti: l'impostazione è write-only sul dispositivo, quindi HA
+mostra l'ultimo valore inviato e accettato; un inching configurato da eWeLink
+o Z2M non si vede. Se una release futura di zha-quirks cambia in qualunque
+modo la quirk built-in dello ZBMINIR2 (attributi di `0xFC11`, modelli, entità,
+sostituzioni di cluster, trigger, filtri: all'avvio la entry registrata deve
+essere identica alla ricetta che l'override replica), l'override si ritira da
+solo (warning nel log) e torna in carico la quirk upstream; verificato che con
+zha-quirks 2.0.0, 2.3.0 e 2.4.0 l'override si registra. Se in
+`custom_quirks_path` c'è un'altra quirk ZBMINIR2, vince quella: l'override
+non si applica e quei relè non causano reload. Con zha-quirks < 2.0 (HA
+2024.8+ lo consente) l'override non si carica: un solo warning all'avvio,
+senza traceback, e la quirk della SWV funziona come prima.
+
+Il tag `v0.12.0` si crea solo dopo l'esito positivo di queste verifiche.

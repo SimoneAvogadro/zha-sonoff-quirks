@@ -8,6 +8,10 @@ On top of upstream support, this quirk adds **control of the valve's on-device
 autonomous irrigation**: set a duration or a volume, turn the channel's switch
 on, and **the valve closes by itself** — even if Home Assistant is offline.
 
+Since 0.12.0 the integration also adds **inching** (automatic switch-back after
+a delay) to the **SONOFF ZBMINIR2** relay — see
+[SONOFF ZBMINIR2: inching](#sonoff-zbminir2-inching).
+
 ## What it exposes
 
 | Entity | Type | Endpoint | Attribute |
@@ -54,9 +58,10 @@ attributed (the session feed is global) and are recorded as unknown.
 
 > **Startup note.** ZHA loads before this integration on a cold Home
 > Assistant start, so the SWV devices can come up without the quirk (all the
-> entities above `unavailable`). The integration detects that after startup
-> and reloads ZHA once, automatically; you may notice ZHA briefly restarting
-> right after boot. This is expected.
+> entities above `unavailable`) — and ZBMINIR2 relays without their inching
+> entities. The integration detects that after startup and reloads ZHA once,
+> automatically; you may notice ZHA briefly restarting right after boot. This
+> is expected.
 
 The state and usage sensors derive from upstream PR
 [zigpy/zha-device-handlers#4993](https://github.com/zigpy/zha-device-handlers/pull/4993);
@@ -288,6 +293,98 @@ Because the configuration is shared, irrigating the two channels with different
 parameters means **serialising**: configure, open CH1, wait for it to close,
 reconfigure, open CH2.
 
+## SONOFF ZBMINIR2: inching
+
+From 0.12.0 the integration also adds **inching** to the SONOFF **ZBMINIR2**
+(Zigbee Mini R2 relay): the eWeLink function where the relay switches back by
+itself once a delay has elapsed — a 1-second impulse for a gate or garage-door
+opener, a stair light that turns itself off after 3 minutes. The timer runs on
+the relay, so it fires even if Home Assistant is down. Nothing to install
+beyond the integration, and no *Reconfigure* is needed. It needs ZHA 2.x
+(zha-quirks 2.0 or later, as shipped with current Home Assistant releases): on
+older releases the inching override is simply not loaded, a single warning
+says so at startup, and the valve quirk works as before.
+
+Three configuration entities appear on the relay's device page, next to the
+four it already had:
+
+| Entity | Type | Values |
+|---|---|---|
+| Inching | switch (config) | on = inching enabled |
+| Inching time | number (config, seconds) | 0.5–3599.5 s, step 0.5 |
+| Inching mode | select (config) | `Turn off after on` (default) / `Turn on after off` |
+
+- **Turn off after on** — every time the relay turns on, it turns itself off
+  again after *Inching time*. This is the impulse / stair-light mode, and the
+  default.
+- **Turn on after off** — the reverse: every time the relay turns off, it turns
+  back on after *Inching time*. **Careful: arming this mode can switch the
+  relay on immediately.** Don't select it on a load that must not power up
+  unattended.
+
+The relay takes the three settings in a single command, so changing any one
+entity also re-sends the other two as currently shown.
+
+**What the entities show.** The relay never reports its inching settings: it
+only accepts them. The three entities therefore show the **last values Home
+Assistant sent and the relay accepted**, stored in zigpy's database so they
+survive restarts. Until the first write they show the defaults (off, 1 s,
+*Turn off after on*), which may not be what the relay actually has. If inching
+was ever configured from the eWeLink app or Zigbee2MQTT, set the three entities
+once from Home Assistant to bring the two back in line; changes made later
+from those apps are not seen either.
+
+**Firmware and errors.** Older firmware may not support the command. If the
+relay answers with an error status, Home Assistant shows the error and the
+entities keep their previous values; update the relay's firmware and try
+again. If the relay does not answer at all, the error is a timeout (zigpy has
+already retried the command by then), and **the relay may or may not have
+applied the new settings**: the command may have arrived and only the reply
+been lost. The entities keep their previous values either way, so they may no
+longer match the relay. A timeout usually points to a radio or link problem
+rather than to the firmware. Once the relay answers again, write the settings
+once more, or turn *Inching* off, so the relay and the entities agree; this
+matters most after a timeout while arming *Turn on after off*.
+
+**How it coexists with ZHA's own quirk.** ZHA already ships a quirk for this
+relay (`zhaquirks.sonoff.zbminir2`, shared with the MINI-ZBD) with four
+entities: *External trigger mode*, *Turbo mode*, *Detach relay* and *Network
+LED*. The bundled quirk overrides it **for the ZBMINIR2 only** (the MINI-ZBD
+keeps ZHA's quirk): it reuses ZHA's cluster definition and recreates those four
+entities exactly, with the same unique_ids, so entities you renamed keep their
+entity_id, name and history. On the device page, *Zigbee info* reports the
+quirk as `custom_components.zha_sonoff_quirks.quirks.sonoff_zbminir2` instead
+of `zhaquirks.sonoff.zbminir2`.
+
+The override is written against the current shape of ZHA's quirk and **steps
+aside by itself**: at startup it checks that ZHA's quirk for this relay is
+exactly the one it replicates — the cluster definition, the models it covers,
+its entities, cluster replacements, device triggers and filters. If a future
+zha-quirks release changes any of that (for instance by adding inching
+upstream, or a new entity), the override is not registered, a warning is
+logged, and ZHA's own quirk stays in charge, so nothing upstream adds is
+hidden. Upstream inching would come with its own entities, so automations
+using these three would need updating.
+
+**Startup.** As with the valve, on a cold start ZHA sets up before this
+integration, so the relays first come up on ZHA's quirk, without the inching
+entities. The one-time ZHA reload after startup now covers ZBMINIR2 relays
+too: with a ZBMINIR2 paired you will see ZHA restart once after each Home
+Assistant start, even without a valve. The reload is triggered only by relays
+still on ZHA's own quirk. If another ZBMINIR2 quirk is loaded from
+`custom_quirks_path` (for instance a copy of an upstream PR), ZHA re-reads it
+every time it starts, so it wins: the relays use that quirk, this override is
+not applied, and they trigger no startup reload. Use one or the other.
+
+The protocol — the eWeLink `protocolData` command (`0x01`) on cluster `0xFC11`,
+manufacturer code `0x1286`, with an 11-byte payload — comes from Zigbee2MQTT's
+`inchingControlSet` in
+[zigbee-herdsman-converters](https://github.com/Koenkk/zigbee-herdsman-converters)
+(`src/devices/sonoff.ts`). Upstream PR
+[zigpy/zha-device-handlers#5135](https://github.com/zigpy/zha-device-handlers/pull/5135),
+not merged at the time of writing, sends the same bytes. The on-device checks
+still to do are listed in [TODO.md](TODO.md) #13.
+
 ## Development
 
 ```bash
@@ -302,16 +399,18 @@ Layout:
 ```
 custom_components/zha_sonoff_quirks/
   __init__.py        # imports quirks/ at startup; serves the card; services
+  quirk_check_logic.py  # decides the one-time ZHA reload after a cold start
   config_flow.py     # one-click flow, no options
   services.py        # irrigation_by_liters / irrigation_by_minutes
   services.yaml      # field selectors only; labels live in strings.json
   icons.json         # per-action icons, so the action picker stays readable
   strings.json       # source of truth; translations/ mirrors its key tree
   quirks/
-    sonoff_swv_zf2.py  # THE quirk (single copy; integrity in checksums.sha256)
+    sonoff_swv_zf2.py  # the valve quirk (single copy; integrity in checksums.sha256)
+    sonoff_zbminir2.py # ZBMINIR2 inching, overriding ZHA's built-in quirk
   www/
     sonoff-valve-card.js  # Lovelace card (auto-registered as a resource)
-tests/               # 98 offline tests, no device required
+tests/               # offline tests, no device required
 ```
 
 Action names are deliberately **front-loaded with the unit** (*Liters🪣💧
@@ -322,13 +421,16 @@ the two indistinguishable on mobile. The emoji and the per-action icons in
 language. `tests/test_translations.py` enforces the prefix rule for every
 translation.
 
-The quirk is deliberately **self-contained**: it imports nothing from the
-integration, so it behaves identically whether loaded via HACS or dropped into
-`custom_quirks_path`.
+The quirks are deliberately **self-contained**: they import nothing from the
+integration, so they behave identically whether loaded via HACS or dropped
+into `custom_quirks_path`.
 
 The tests run entirely offline against a fake `ControllerApplication`: no
-network I/O, no device needed. The byte layouts are exercised against payloads
-captured verbatim from a real valve.
+network I/O, no device needed. The valve's byte layouts are exercised against
+payloads captured verbatim from a real valve; the ZBMINIR2 inching frames
+against vectors derived from Zigbee2MQTT's converter, not yet captured from a
+relay. The cold-start reload decision (`quirk_check_logic.py`) has no Home
+Assistant imports, so it is tested directly.
 
 ## Status and known limits
 

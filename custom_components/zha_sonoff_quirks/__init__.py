@@ -1,22 +1,26 @@
 """Sonoff ZHA custom integration.
 
-This integration ships custom ZHA quirks for SONOFF Zigbee devices. Its first
-job is to make sure the bundled quirk modules are imported, which registers
-them into zigpy's global registry so ZHA applies them on device join /
-interrogation — exactly as if they had been dropped into the directory
-configured by `zha.custom_quirks_path`.
+This integration ships custom ZHA quirks for SONOFF Zigbee devices: the
+SWV-ZF2 valve quirk and an inching override of the built-in ZBMINIR2 relay
+quirk (see `quirks/`). Its first job is to make sure the bundled quirk modules
+are imported, which registers them into ZHA's quirk registry so ZHA applies
+them on device join / interrogation — exactly as if they had been dropped into
+the directory configured by `zha.custom_quirks_path`.
 
 The quirks register themselves as a side-effect of being imported (a
 `QuirkBuilder(...).add_to_registry()` call). The import below happens at
 module load time — but that is NOT guaranteed to precede ZHA's device
 enumeration: this integration declares `zha` as a manifest dependency, so on
 a cold HA start ZHA sets up (and applies quirks to its devices) BEFORE this
-module is imported, and the SWV devices come up without the quirk (all custom
-entities `unavailable`). Observed live on 2026-08-09. The fix is
-`_async_ensure_quirk_applied`: after HA has started, inspect the ZHA gateway
-and, if an SWV device lacks a quirk, reload the ZHA config entry ONCE per HA
-session — the quirks are registered in-process by then, so the reload applies
-them deterministically.
+module is imported. The SWV devices then come up without the quirk (all
+custom entities `unavailable`; observed live on 2026-08-09), and a ZBMINIR2
+comes up on the built-in zhaquirks quirk, without the inching entities. The
+fix is `_async_ensure_quirk_applied`: after HA has started, inspect the ZHA
+gateway and, if an SWV device lacks a quirk or a ZBMINIR2 is still on ZHA's
+built-in quirk instead of the inching override, reload the ZHA config entry
+ONCE per HA session — the quirks are registered in-process by then, so the
+reload applies them deterministically. The decision is HA-free and unit-tested
+(`quirk_check_logic.py`).
 
 On top of the quirks, the integration:
 
@@ -46,12 +50,25 @@ from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.setup import async_when_setup
 
-# Import for side-effect: registers bundled ZHA quirks into zigpy's global
-# registry. On a cold start this still happens AFTER ZHA set up (zha is a
-# manifest dependency); _async_ensure_quirk_applied closes that gap.
-from . import quirks  # noqa: F401
-from .const import DOMAIN, JSMODULES, PLATFORMS, SWV_MODELS, URL_BASE
+# Imported first of all for its side-effect: registers the bundled quirks into
+# ZHA's quirk registry. On a cold start this still happens AFTER ZHA set up (zha
+# is a manifest dependency); _async_ensure_quirk_applied closes that gap and
+# reads the ZBMINIR2 override's state from quirks.sonoff_zbminir2.
+from . import quirks
+from .const import (
+    DOMAIN,
+    JSMODULES,
+    PLATFORMS,
+    SWV_MODELS,
+    URL_BASE,
+    ZBMINIR2_MODEL_INFO,
+)
 from .history import SwvRunLog
+from .quirk_check_logic import (
+    decide_zha_reload,
+    registry_entry_attr,
+    zbminir2_override_state,
+)
 from .services import (
     async_refresh_service_descriptions,
     async_setup_services,
@@ -104,7 +121,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry.
 
     The services are removed and the run log flushed, but quirk registration
-    cannot be cleanly undone (the registry has no public de-registration API)
+    is not undone (devices already resolved would keep their quirk anyway)
     and persists for the lifetime of the HA process. The static path and the
     Lovelace resource likewise stay registered — HA exposes no clean way to
     undo them, and leaving them idle is harmless. A restart is required to
@@ -141,20 +158,28 @@ def _async_schedule_quirk_check(hass: HomeAssistant) -> None:
 
 
 async def _async_ensure_quirk_applied(hass: HomeAssistant) -> None:
-    """Reload ZHA once if an SWV device came up without its quirk.
+    """Reload ZHA once if a device came up before the bundled quirks registered.
 
     On a cold HA start ZHA applies quirks before this integration's module is
-    imported (see module docstring), leaving every custom entity of the valve
-    `unavailable`. By the time this runs the quirks ARE in zigpy's registry,
-    so one ZHA reload re-initializes the devices with the quirk applied.
+    imported (see module docstring): every custom entity of the valve is
+    `unavailable`, and a ZBMINIR2 sits on the built-in quirk without the
+    inching entities. By the time this runs the quirks ARE in ZHA's registry,
+    so one ZHA reload re-initializes the devices with them applied.
+
+    Which devices count is decided by `decide_zha_reload`, fail-closed on ZHA
+    API drift: only an EXPLICIT quirk_applied == False marks an SWV as
+    unquirked, and the ZBMINIR2 check runs only while the override is
+    registered and still wins in the registry, only if ZHA still exposes the
+    registry entry a device was resolved to, and only for a relay on the
+    built-in entry itself (by identity; a relay on another quirk, e.g. one
+    from custom_quirks_path, would land on it again) — better no auto-heal
+    than a spurious full Zigbee restart on every boot forever.
 
     Guarded to a single reload per HA session: if the quirk still doesn't
     apply after the reload the cause is not ordering, and retrying would loop
     a full Zigbee network restart forever.
     """
     data = hass.data.setdefault(DOMAIN, {})
-    if data.get("zha_reload_done"):
-        return
     try:
         from homeassistant.components.zha.helpers import get_zha_gateway
 
@@ -163,17 +188,20 @@ async def _async_ensure_quirk_applied(hass: HomeAssistant) -> None:
         _LOGGER.debug("Cannot inspect the ZHA gateway (%s); skipping check", err)
         return
 
-    # Fail-closed on ZHA API drift: only an EXPLICIT quirk_applied == False
-    # counts as unquirked. If zha ever renames the attribute, getattr returns
-    # None and we skip — better no auto-heal than a spurious full Zigbee
-    # restart on every boot forever.
-    unquirked = [
-        device
-        for device in getattr(gateway, "devices", {}).values()
-        if getattr(device, "model", None) in SWV_MODELS
-        and getattr(device, "quirk_applied", None) is False
-    ]
-    if not unquirked:
+    # quirks.sonoff_zbminir2 is None when that optional module failed to load.
+    zbminir2_builtin_entry, zbminir2_effective = zbminir2_override_state(
+        getattr(quirks, "sonoff_zbminir2", None)
+    )
+    decision = decide_zha_reload(
+        getattr(gateway, "devices", {}).values(),
+        already_reloaded=bool(data.get("zha_reload_done")),
+        swv_models=SWV_MODELS,
+        zbminir2_model=ZBMINIR2_MODEL_INFO,
+        zbminir2_builtin_entry=zbminir2_builtin_entry,
+        zbminir2_effective=zbminir2_effective,
+        entry_attr=registry_entry_attr(),
+    )
+    if not decision.reload:
         return
 
     zha_entries = [
@@ -185,9 +213,9 @@ async def _async_ensure_quirk_applied(hass: HomeAssistant) -> None:
         return
     data["zha_reload_done"] = True
     _LOGGER.warning(
-        "SWV device(s) %s initialized without the quirk (ZHA loaded before the "
-        "quirk registration); reloading ZHA once to apply it",
-        ", ".join(str(getattr(d, "name", d)) for d in unquirked),
+        "%s (ZHA loaded before the bundled quirks were registered); reloading "
+        "ZHA once to apply them",
+        decision.describe(),
     )
     await hass.config_entries.async_reload(zha_entries[0].entry_id)
 

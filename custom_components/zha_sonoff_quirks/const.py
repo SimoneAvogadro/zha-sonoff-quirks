@@ -1,7 +1,7 @@
 """Constants for the Sonoff ZHA integration."""
 
 DOMAIN = "zha_sonoff_quirks"
-VERSION = "0.11.0"
+VERSION = "0.12.0"
 
 # Entity platforms owned by the integration itself (the quirk entities are
 # created by ZHA, not by us; these are the run-history sensors and the two
@@ -10,6 +10,11 @@ PLATFORMS = ["sensor", "text"]
 
 # ZHA model strings this integration's quirk applies to.
 SWV_MODELS = ("SWV-ZF2", "SWV-ZF2U", "SWV-ZF2E")
+
+# Zigbee (manufacturer, model) the ZBMINIR2 inching override applies to. Must
+# equal MANUFACTURER/MODEL in quirks/sonoff_zbminir2.py (the quirk cannot
+# import from here: it has to stay self-contained); a test enforces it.
+ZBMINIR2_MODEL_INFO = ("SONOFF", "ZBMINIR2")
 
 # ── Channels (the valve's two outlets) ──
 #: Canonical channel value used EVERYWHERE below the presentation layer: the
