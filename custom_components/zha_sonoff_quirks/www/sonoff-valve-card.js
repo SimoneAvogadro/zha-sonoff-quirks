@@ -1141,6 +1141,8 @@ class SonoffValveCard extends HTMLElement {
 ha-card{overflow:hidden}
 .ch{display:flex;align-items:center;justify-content:space-between;padding:12px 16px 6px}
 .hl{display:flex;align-items:center;gap:10px}
+.hl.link{cursor:pointer;border-radius:8px}
+.hl.link:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .di{width:32px;height:32px;border-radius:8px;background:var(--accent-dim);display:flex;align-items:center;justify-content:center}
 .tt{font-size:15px;font-weight:600;color:var(--tm)}
 .hr{display:flex;align-items:center;gap:10px}
@@ -1234,7 +1236,7 @@ input[type=number]{-moz-appearance:textfield}
 </style>
 <ha-card>
   <div class="ch">
-    <div class="hl">
+    <div class="hl${this._deviceId ? " link" : ""}" id="hl"${this._deviceId ? ' role="button" tabindex="0"' : ""}>
       <div class="di"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round"><path d="M12 2C12 2 5 9 5 14a7 7 0 0014 0c0-5-7-12-7-12z"/></svg></div>
       <span class="tt"></span>
     </div>
@@ -1322,6 +1324,20 @@ input[type=number]{-moz-appearance:textfield}
 
   _bindEvents() {
     const el = this._el;
+    // Icon + name open the device page: the header stands for the whole
+    // two-channel valve, so no single entity's more-info dialog fits it.
+    // Same navigation the HA frontend uses internally (pushState + event).
+    const hl = this.shadowRoot.getElementById("hl");
+    if (hl && this._deviceId) {
+      const openDevice = () => {
+        history.pushState(null, "", `/config/devices/device/${encodeURIComponent(this._deviceId)}`);
+        window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
+      };
+      hl.addEventListener("click", openDevice);
+      hl.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); openDevice(); }
+      });
+    }
     el.bl?.addEventListener("click", () => this._selectMode("litri"));
     el.bt?.addEventListener("click", () => this._selectMode("tempo"));
     el.gl1?.addEventListener("click", () => this._onGo("litri", "1"));
