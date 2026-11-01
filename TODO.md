@@ -366,3 +366,54 @@ senza traceback, e la quirk della SWV funziona come prima.
 
 Tag `v0.12.0` creato il 2026-10-31 dopo la conferma sul dispositivo (cold
 boot, scritture accettate, inching da 2 s). I punti residui non lo bloccano.
+
+## 14. Deprecazioni e compatibilità con le release di HA (0.12.1) — DA VERIFICARE SUL DISPOSITIVO
+
+Analisi del 2026-11-01 sugli avvisi del log di HA e dei test, corretta in
+0.12.1:
+
+- **Device registry.** `dev_reg.devices.values()` (`helpers.py`, `sensor.py`)
+  smette di funzionare con HA 2027.9, `DeviceEntry.config_entries`
+  (`sensor.py`) con HA 2027.10. `find_swv_switches` serve sensori, campi
+  testo, servizi e storico. La correzione suggerita da HA,
+  `for device in dev_reg.devices`, restituisce gli id dei dispositivi prima di
+  HA 2026.9, e `config_entry_id` esiste solo da HA 2026.8. Ora si usa
+  `dr.async_entries_for_config_entry`, presente in ogni versione: le valvole
+  sono cercate fra i dispositivi di ZHA, e `config_entries` si legge solo dove
+  manca `config_entry_id`.
+- **Import della quirk SWV.** `zigpy.quirks.CustomCluster`, `zigpy.quirks.v2.*`
+  e le costanti delle entità vivono in zhaquirks/zha da zha-quirks 2.1.0 (HA
+  2026.7). zigpy tiene shim deprecati senza data di rimozione, ancora presenti
+  in zigpy 2.4.1, e HA non mostra i `DeprecationWarning`. Ora la quirk importa
+  da `zhaquirks.builder` / `zhaquirks.clusters`, con ripiego sui percorsi di
+  zigpy per zha-quirks < 2.0. Inoltre l'import della quirk SWV è protetto: un
+  suo errore è un ERROR con traceback e non impedisce più il caricamento
+  dell'integrazione.
+- **CI.** I test trasformano in errori le deprecazioni causate dalle quirk. Un
+  job prova le ultime zha / zha-quirks col Python di HA (3.14), uno importa la
+  quirk SWV con lo stack di HA 2026.6. Passando a setup-uv v10 serve
+  `activate-environment: true`: da v6 `python-version` non attiva più il venv.
+  Da v8 setup-uv non pubblica più tag mobili, quindi il workflow indica la
+  versione completa.
+
+Verificati in locale: 315 test su zha-quirks 2.2.0 (Python 3.13) e 2.4.0
+(Python 3.14, lo stack di HA 2026.11); import della quirk SWV su zha-quirks
+1.2.0, 2.1.0 e 2.4.0. `find_swv_switches` e la pulizia dei dispositivi ombra
+provati fuori dal repo con `pytest-homeassistant-custom-component` sul device
+registry vero di HA 2026.10.4 e 2026.7.4: nessun avviso di deprecazione, il
+dispositivo ombra viene rimosso, e su 2026.7 resta quello condiviso con ZHA. Lo
+stesso test sul codice della 0.12.0 riproduce i tre avvisi del log.
+
+Da verificare sul dispositivo, prima del tag `v0.12.1`:
+
+1. Dopo il riavvio di HA spariscono dal log i tre avvisi di
+   `homeassistant.helpers.frame` (`device_registry.devices`,
+   `DeviceEntry.config_entries`).
+2. La valvola ha ancora sensori, campi testo e storico, e i servizi
+   `irrigation_by_liters` / `irrigation_by_minutes` la trovano.
+3. In *Zigbee info* la quirk della valvola è ancora
+   `custom_components.zha_sonoff_quirks.quirks.sonoff_swv_zf2`, con le
+   entità di configurazione disponibili.
+
+Non verificato: il minimo dichiarato in `hacs.json` (HA 2024.8.0). Lo stack
+più vecchio provato è quello di HA 2026.6, e solo per l'import della quirk.

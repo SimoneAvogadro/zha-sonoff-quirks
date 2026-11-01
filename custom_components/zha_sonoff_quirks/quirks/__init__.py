@@ -17,6 +17,9 @@ Bundled quirks:
   affecting the SWV-ZF2 quirk or the integration. An ImportError (zha-quirks
   older than 2.x) is logged as one warning without traceback.
 
+Neither import can break the integration: an error importing the SWV-ZF2
+quirk is logged with its traceback and leaves `sonoff_swv_zf2` set to None.
+
 Each quirk module must be self-contained (it must not import from
 `custom_components.zha_sonoff_quirks.*` other than `quirks.*`) so it keeps
 working even if ZHA loads it via `custom_quirks_path` instead of via this
@@ -25,9 +28,18 @@ integration's import path.
 
 import logging
 
-from . import sonoff_swv_zf2  # noqa: F401  -- import for side-effect
-
 _LOGGER = logging.getLogger(__name__)
+
+try:
+    from . import sonoff_swv_zf2  # noqa: F401  -- import for side-effect
+except Exception:  # e.g. a ZHA API it relies on removed by a later HA release
+    # Fail here, loudly, rather than taking the whole integration down with it:
+    # the integration still loads and the ZBMINIR2 override still applies.
+    sonoff_swv_zf2 = None
+    _LOGGER.exception(
+        "Could not load the SONOFF SWV-ZF2 quirk; SWV-ZF2 valves keep the "
+        "built-in ZHA quirk, without the irrigation configuration entities"
+    )
 
 try:
     from . import sonoff_zbminir2  # noqa: F401  -- import for side-effect

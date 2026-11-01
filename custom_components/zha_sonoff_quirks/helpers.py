@@ -75,7 +75,7 @@ def resolve_entities(
 
 @callback
 def find_swv_switches(hass: HomeAssistant) -> list[dict[str, str]]:
-    """Every channel switch of every SWV-ZF2* device currently registered.
+    """Every channel switch of every SWV-ZF2* device currently registered in ZHA.
 
     Returns a list of ``{"switch": entity_id, "device_id": ..., "channel":
     "1"|"2"}`` dicts. Matching is on the device registry's model string, so it
@@ -85,7 +85,15 @@ def find_swv_switches(hass: HomeAssistant) -> list[dict[str, str]]:
     dev_reg = dr.async_get(hass)
     ent_reg = er.async_get(hass)
     out: list[dict[str, str]] = []
-    for device in dev_reg.devices.values():
+    # The valves are ZHA devices: looking them up by ZHA's config entry works
+    # the same on every HA release, unlike `dev_reg.devices` (a mapping until
+    # HA 2026.9, a collection of entries from then on).
+    devices = [
+        device
+        for zha_entry in hass.config_entries.async_entries("zha")
+        for device in dr.async_entries_for_config_entry(dev_reg, zha_entry.entry_id)
+    ]
+    for device in devices:
         if device.model not in SWV_MODELS:
             continue
         for entry in er.async_entries_for_device(ent_reg, device.id):

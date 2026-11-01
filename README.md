@@ -446,6 +446,13 @@ against vectors derived from Zigbee2MQTT's converter, not yet captured from a
 relay. The cold-start reload decision (`quirk_check_logic.py`) has no Home
 Assistant imports, so it is tested directly.
 
+A `DeprecationWarning` raised by the quirks fails the tests: Home Assistant
+never shows these warnings, so this is the only notice before a ZHA API goes
+away. CI runs the tests on the versions pinned in `pyproject.toml` and on the
+latest `zha` / `zha-quirks` with Home Assistant's Python. It also imports the
+SWV-ZF2 quirk on the zha-quirks 1.x stack of HA 2026.6, which takes the
+fallback import path the tests never reach.
+
 ## Status and known limits
 
 See [TODO.md](TODO.md).

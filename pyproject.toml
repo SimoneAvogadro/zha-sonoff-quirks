@@ -21,8 +21,10 @@ pythonpath = [".", "tests", "custom_components/zha_sonoff_quirks/quirks"]
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 filterwarnings = [
-    # zigpy 2.1 ha spostato i quirks in zhaquirks mantenendo gli shim deprecati.
-    "ignore::DeprecationWarning:zigpy.quirks",
+    # Una deprecazione causata dalle quirk fa fallire i test: HA non mostra i
+    # DeprecationWarning, quindi la CI e' l'unico preavviso prima che l'API
+    # sparisca (cosi' gli shim di zigpy 2.x per QuirkBuilder e CustomCluster).
+    "error::DeprecationWarning:.*sonoff_",
 ]
 
 [tool.ruff]

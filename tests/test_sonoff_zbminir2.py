@@ -1232,3 +1232,31 @@ def test_unexpected_error_in_zbminir2_module_keeps_the_traceback(caplog):
     assert records[0].levelno == logging.ERROR
     assert records[0].exc_info is not None
     assert "unexpected bug" in caplog.text
+
+
+def test_broken_swv_module_cannot_break_the_package(caplog):
+    """Un errore nella quirk SWV-ZF2 e' un ERROR con traceback, non un crash.
+
+    Senza la protezione l'eccezione risalirebbe fino all'import
+    dell'integrazione, che non si caricherebbe affatto.
+    """
+    name = "_isolated_quirks_swv_bug"
+    finder = _ExplodingModule(f"{name}.sonoff_swv_zf2")
+    with (
+        ZHA_DEVICE_REGISTRY.preserve_state(),
+        mock.patch.dict(sys.modules),
+        mock.patch.object(sys, "meta_path", [finder, *sys.meta_path]),
+        caplog.at_level(logging.DEBUG, logger=name),
+    ):
+        package = _load_quirks_package(name)
+
+        assert package.sonoff_swv_zf2 is None
+        assert package.sonoff_zbminir2 is sys.modules[f"{name}.sonoff_zbminir2"]
+        assert package.sonoff_zbminir2.REGISTERED is True
+
+    records = _package_records(caplog, name)
+    assert len(records) == 1
+    assert records[0].levelno == logging.ERROR
+    assert records[0].exc_info is not None
+    assert "SWV-ZF2" in records[0].getMessage()
+    assert "unexpected bug" in caplog.text

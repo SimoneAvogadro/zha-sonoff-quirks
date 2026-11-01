@@ -192,10 +192,13 @@ async def _async_ensure_quirk_applied(hass: HomeAssistant) -> None:
     zbminir2_builtin_entry, zbminir2_effective = zbminir2_override_state(
         getattr(quirks, "sonoff_zbminir2", None)
     )
+    # Likewise quirks.sonoff_swv_zf2: with no quirk registered a reload cannot
+    # apply it, so the valves must not count.
+    swv_registered = getattr(quirks, "sonoff_swv_zf2", None) is not None
     decision = decide_zha_reload(
         getattr(gateway, "devices", {}).values(),
         already_reloaded=bool(data.get("zha_reload_done")),
-        swv_models=SWV_MODELS,
+        swv_models=SWV_MODELS if swv_registered else (),
         zbminir2_model=ZBMINIR2_MODEL_INFO,
         zbminir2_builtin_entry=zbminir2_builtin_entry,
         zbminir2_effective=zbminir2_effective,

@@ -6,14 +6,18 @@ on:
   pull_request:
 
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v5
+      # Da setup-uv v8 non esistono piu' i tag mobili (v10): versione completa.
+      # Da v6 il venv va attivato esplicitamente, python-version non basta.
+      - uses: astral-sh/setup-uv@v10.3.3
         with:
           python-version: "3.13"
+          activate-environment: true
+          cache-dependency-glob: pyproject.toml
 
       - name: Install dependencies
         run: uv pip install -e ".[dev]"
@@ -24,5 +28,58 @@ jobs:
       - name: Lint
         run: ruff check .
 
+  test:
+    name: test (${{ matrix.stack }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Le versioni fissate in pyproject.toml (HA 2026.8).
+          - stack: versioni fissate
+            python: "3.13"
+            deps: '-e ".[dev]"'
+          # Le ultime zha / zha-quirks su PyPI col Python di HA: anticipano la
+          # prossima release di HA, deprecazioni comprese (pyproject.toml le
+          # trasforma in errori).
+          - stack: ultime zha e zha-quirks
+            python: "3.14"
+            deps: pytest pytest-asyncio zha zha-quirks
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: ${{ matrix.python }}
+          activate-environment: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Install dependencies
+        run: uv pip install ${{ matrix.deps }}
+
+      - name: Versioni
+        run: uv pip list | grep -E "^(zigpy|zha|zha-quirks) "
+
       - name: Test
         run: pytest -q
+
+  # I test richiedono zha-quirks 2.x, quindi il ramo di ripiego degli import
+  # della quirk SWV-ZF2 (zha-quirks < 2.0) non lo eseguono: qui basta che la
+  # quirk si importi, e quindi si registri, con lo stack di HA 2026.6.
+  quirk-zha-quirks-1:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          python-version: "3.13"
+          activate-environment: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Install dependencies
+        run: uv pip install "zha==1.4.1"
+
+      - name: Import della quirk SWV-ZF2
+        working-directory: custom_components/zha_sonoff_quirks/quirks
+        run: python -c "import sonoff_swv_zf2"

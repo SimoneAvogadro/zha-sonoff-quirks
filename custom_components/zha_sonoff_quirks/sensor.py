@@ -92,10 +92,14 @@ async def async_setup_entry(
         """
         await asyncio.sleep(10)
         ent_reg = er.async_get(hass)
-        for device in list(dev_reg.devices.values()):
-            if entry.entry_id not in device.config_entries:
-                continue
-            if len(device.config_entries) > 1:
+        for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
+            # Since HA 2026.8 a device has a single config entry
+            # (config_entry_id); before, it can be shared with another
+            # integration's, and then it is not ours to delete.
+            if (
+                not hasattr(device, "config_entry_id")
+                and len(device.config_entries) > 1
+            ):
                 continue
             if er.async_entries_for_device(
                 ent_reg, device.id, include_disabled_entities=True

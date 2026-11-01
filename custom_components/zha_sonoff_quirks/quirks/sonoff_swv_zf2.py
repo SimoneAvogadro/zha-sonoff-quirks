@@ -38,16 +38,33 @@ Formato wire 0x501D (12 byte uint8 array, campi big-endian):
 
 from typing import Any, Final
 
-from zigpy.quirks import CustomCluster
-from zigpy.quirks.v2 import (
-    QuirkBuilder,
-    ReportingConfig,
-    SensorDeviceClass,
-    SensorStateClass,
-)
-from zigpy.quirks.v2.homeassistant import EntityType, UnitOfTime, UnitOfVolume
-from zigpy.quirks.v2.homeassistant.binary_sensor import BinarySensorDeviceClass
-from zigpy.quirks.v2.homeassistant.number import NumberDeviceClass
+try:
+    # zha-quirks 2.x (HA 2026.7+): QuirkBuilder, CustomCluster e le costanti
+    # delle entita' non stanno piu' in zigpy, che tiene solo shim deprecati
+    # destinati a sparire.
+    from zhaquirks.builder import (
+        BinarySensorDeviceClass,
+        EntityType,
+        NumberDeviceClass,
+        QuirkBuilder,
+        ReportingConfig,
+        SensorDeviceClass,
+        SensorStateClass,
+        UnitOfTime,
+        UnitOfVolume,
+    )
+    from zhaquirks.clusters import CustomCluster
+except ImportError:  # zha-quirks < 2.0 (HA fino alla 2026.6)
+    from zigpy.quirks import CustomCluster
+    from zigpy.quirks.v2 import (
+        QuirkBuilder,
+        ReportingConfig,
+        SensorDeviceClass,
+        SensorStateClass,
+    )
+    from zigpy.quirks.v2.homeassistant import EntityType, UnitOfTime, UnitOfVolume
+    from zigpy.quirks.v2.homeassistant.binary_sensor import BinarySensorDeviceClass
+    from zigpy.quirks.v2.homeassistant.number import NumberDeviceClass
 import zigpy.types as t
 from zigpy.zcl import foundation
 from zigpy.zcl.foundation import BaseAttributeDefs, ZCLAttributeDef
