@@ -7,7 +7,7 @@ integration installable from HACS.
 
 | Device | Models | What the quirk adds | Verified on |
 |---|---|---|---|
-| SONOFF SWV-ZF2 dual-channel irrigation valve | `SWV-ZF2`, `SWV-ZF2E`, `SWV-ZF2U` | on-device autonomous irrigation (duration / volume), usage sensors, run history, Lovelace card | fw `0x00001007` |
+| SONOFF SWV-ZF2 dual-channel irrigation valve | `SWV-ZF2`, `SWV-ZF2E`, `SWV-ZF2U` | on-device autonomous irrigation (duration / volume), usage sensors, run history, Lovelace card | fw `0x00001007`, `0x00001009` |
 | SONOFF ZBMINIR2 Zigbee Mini R2 relay | `ZBMINIR2` | **inching** (automatic switch-back after a delay), on top of ZHA's own entities | fw `0x00001100` |
 
 **SWV-ZF2** — sold as `SWV-ZF2E` / `SWV-ZF2U` depending on market, same

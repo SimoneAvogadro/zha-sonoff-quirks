@@ -367,7 +367,7 @@ senza traceback, e la quirk della SWV funziona come prima.
 Tag `v0.12.0` creato il 2026-10-31 dopo la conferma sul dispositivo (cold
 boot, scritture accettate, inching da 2 s). I punti residui non lo bloccano.
 
-## 14. Deprecazioni e compatibilità con le release di HA (0.12.1) — DA VERIFICARE SUL DISPOSITIVO
+## 14. Deprecazioni e compatibilità con le release di HA (0.12.1) — FATTO, verificato sul dispositivo (2026-11-04)
 
 Analisi del 2026-11-01 sugli avvisi del log di HA e dei test, corretta in
 0.12.1:
@@ -415,5 +415,28 @@ Da verificare sul dispositivo, prima del tag `v0.12.1`:
    `custom_components.zha_sonoff_quirks.quirks.sonoff_swv_zf2`, con le
    entità di configurazione disponibili.
 
+Esito del 2026-11-01, `main` installato da HACS e HA 2026.10.4 riavviata, con
+le verifiche fatte da remoto:
+
+- Punto 1 — OK. Nessun avviso di `homeassistant.helpers.frame` e nessun errore
+  dell'integrazione. Caricata la 0.12.1 (risorsa della card `v=0.12.1-…`). Un
+  solo reload di ZHA al cold boot, con la SWV e i due ZBMINIR2 nello stesso
+  messaggio, come prima.
+- Punto 2 — OK senza aprire la valvola. Ci sono tutte le 50 entità della
+  valvola e dei due relè di prima del riavvio, nessuna `unavailable`. Storico,
+  totali e nomi delle linee hanno gli stessi valori. Le due azioni mostrano
+  "A — Giardino" / "B — Prato davanti", etichette costruite da
+  `find_swv_switches`.
+- Punto 3 — OK. *Zigbee info* (fw `0x00001009`) mostra
+  `custom_components.zha_sonoff_quirks.quirks.sonoff_swv_zf2:(SONOFF /
+  SWV-ZF2)`, e le entità di configurazione sono disponibili con i valori di
+  prima.
+
+Confermato dall'utente il 2026-11-04, sul codice installato in HA (`6a51c0f`,
+la 0.12.1 più la modifica alla card): la valvola si accende e si spegne, e
+l'inching dei ZBMINIR2 funziona.
+
 Non verificato: il minimo dichiarato in `hacs.json` (HA 2024.8.0). Lo stack
 più vecchio provato è quello di HA 2026.6, e solo per l'import della quirk.
+
+Tag `v0.12.1` creato il 2026-11-04 dopo la conferma sul dispositivo.
